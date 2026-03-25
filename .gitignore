@@ -1,0 +1,12 @@
+node_modules/
+dist/
+dist-electron/
+dist-installer/
+android/
+ios/
+.env
+*.env.local
+*.db
+*.db-wal
+*.db-shm
+release/
