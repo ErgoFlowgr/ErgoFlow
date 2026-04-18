@@ -234,6 +234,7 @@ export default function Invoices() {
 
     const state = location.state as { invoiceId?: string; fromJob?: { customer_id: string | null; customer_name: string | null; description: string | null; notes: string | null; job_id: string }; fromOffer?: { customer_id: string | null; customer_name: string | null; customer_address: string | null; offer_number: string; offer_id: string } } | null
 
+    if (!state) return
     navigate('/invoices', { replace: true, state: null })
 
     if (state?.invoiceId) {
