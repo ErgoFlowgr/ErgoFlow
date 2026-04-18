@@ -30,8 +30,12 @@ const ALLOWED_SYNC_TABLES = new Set([
   'inventory',
 ])
 
-const PUSH_INTERVAL_MS  =  30_000 // push pending changes every 30s (only if queue has items)
+const PUSH_INTERVAL_MS  =  60_000 // push pending changes every 60s (only if queue has items)
 const PULL_INTERVAL_MS  = 300_000 // full pull every 5 minutes
+const FETCH_TIMEOUT_MS  =   5_000 // abort individual sync fetch calls after 5s
+
+let consecutivePushFailures = 0
+let pushBackoffUntil = 0
 
 export function setupSyncWorker(win: BrowserWindow | null) {
   sync(win) // run immediately on startup
@@ -70,6 +74,7 @@ async function refreshAccessToken(): Promise<string | null> {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY },
       body: JSON.stringify({ refresh_token: refreshToken }),
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })
     if (!res.ok) { slog('[SYNC] Token refresh failed: ' + res.status); return null }
     const data = await res.json() as { access_token?: string; refresh_token?: string }
@@ -98,6 +103,11 @@ async function sync(win: BrowserWindow | null) {
 
 async function pushOnly(win: BrowserWindow | null) {
   if (syncInProgress) return
+  // Back off if Supabase keeps failing
+  if (Date.now() < pushBackoffUntil) {
+    slog(`[SYNC] Push skipped — backing off until ${new Date(pushBackoffUntil).toISOString()}`)
+    return
+  }
   // Skip if nothing to push
   try {
     const db = getDb()
@@ -115,10 +125,21 @@ async function pushOnly(win: BrowserWindow | null) {
     const ownerId = getOwnerIdFromToken(token)
     if (!ownerId) return
     const db = getDb()
-    await pushLocalChanges(url, key, token, ownerId, db)
-    win?.webContents.send('sync:complete', { timestamp: new Date().toISOString() })
+    const pushed = await pushLocalChanges(url, key, token, ownerId, db)
+    if (pushed) {
+      consecutivePushFailures = 0
+      win?.webContents.send('sync:complete', { timestamp: new Date().toISOString() })
+    } else {
+      consecutivePushFailures++
+      // After 3 consecutive all-fail cycles, back off for 10 minutes
+      if (consecutivePushFailures >= 3) {
+        pushBackoffUntil = Date.now() + 10 * 60_000
+        slog(`[SYNC] ${consecutivePushFailures} consecutive failures — backing off 10 min`)
+      }
+    }
     slog('[SYNC] Push-only done')
   } catch (err) {
+    consecutivePushFailures++
     slog('[SYNC] Push-only error: ' + String(err))
   } finally {
     syncInProgress = false
@@ -266,13 +287,18 @@ function extractSummary(call: Record<string, unknown>): string | null {
   return String(analysis?.summary ?? call.summary ?? '') || null
 }
 
-async function pushLocalChanges(url: string, key: string, accessToken: string, ownerId: string, db: ReturnType<typeof getDb>, retried = false) {
-  const queue = db.prepare('SELECT * FROM sync_queue ORDER BY id ASC LIMIT 100').all() as Array<{
+async function pushLocalChanges(url: string, key: string, accessToken: string, ownerId: string, db: ReturnType<typeof getDb>, retried = false): Promise<boolean> {
+  const queue = db.prepare('SELECT * FROM sync_queue ORDER BY id ASC LIMIT 50').all() as Array<{
     id: number
     table_name: string
     record_id: string
     operation: string
   }>
+
+  if (queue.length === 0) return true
+
+  let anySuccess = false
+  let anyFailure = false
 
   for (const item of queue) {
     if (!ALLOWED_SYNC_TABLES.has(item.table_name)) {
@@ -291,23 +317,22 @@ async function pushLocalChanges(url: string, key: string, accessToken: string, o
       const headers = {
         'Content-Type': 'application/json',
         apikey: key,
-        Authorization: `Bearer ${accessToken}`,  // user's session token — satisfies RLS
+        Authorization: `Bearer ${accessToken}`,
         Prefer: 'resolution=merge-duplicates',
       }
 
       let res: Response
+      const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS)
       if (item.operation === 'delete') {
-        res = await fetch(`${endpoint}?id=eq.${item.record_id}`, { method: 'DELETE', headers })
+        res = await fetch(`${endpoint}?id=eq.${item.record_id}`, { method: 'DELETE', headers, signal })
       } else {
-        // Strip local-only fields, inject owner_id for RLS
         const { synced: _s, ...clean } = record as Record<string, unknown>
         const enriched = { ...clean, owner_id: ownerId }
-        res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(enriched) })
+        res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(enriched), signal })
       }
 
       if (!res.ok) {
         const body = await res.text().catch(() => '')
-        // On 401, refresh the token and retry the entire batch once
         if (res.status === 401 && !retried) {
           slog('[SYNC] 401 — refreshing token and retrying push')
           const newToken = await refreshAccessToken()
@@ -315,20 +340,25 @@ async function pushLocalChanges(url: string, key: string, accessToken: string, o
             const newOwnerId = getOwnerIdFromToken(newToken) ?? ownerId
             return pushLocalChanges(url, key, newToken, newOwnerId, db, true)
           }
-          // Refresh failed — abort the whole batch, will retry next cycle
-          slog('[SYNC] Token refresh failed — aborting push, will retry next cycle')
-          return
+          slog('[SYNC] Token refresh failed — aborting push')
+          return false
         }
         slog(`[SYNC] Push failed ${item.table_name}/${item.record_id}: ${res.status} ${body.slice(0, 200)}`)
-        continue  // leave in queue, retry next cycle
+        anyFailure = true
+        continue
       }
 
       db.prepare('DELETE FROM sync_queue WHERE id = ?').run(item.id)
       db.prepare(`UPDATE ${item.table_name} SET synced = 1 WHERE id = ?`).run(item.record_id)
+      anySuccess = true
     } catch (err) {
-      console.error(`Failed to push ${item.table_name}/${item.record_id}:`, err)
+      slog(`[SYNC] Push error ${item.table_name}/${item.record_id}: ${String(err)}`)
+      anyFailure = true
     }
   }
+
+  // Return true only if we had no failures (or everything was already empty/cleaned)
+  return anySuccess && !anyFailure
 }
 
 async function pullRemoteChanges(url: string, key: string, initialToken: string, db: ReturnType<typeof getDb>) {
@@ -354,7 +384,7 @@ async function pullRemoteChanges(url: string, key: string, initialToken: string,
       const filter = lastPull
         ? `updated_at=gte.${lastPull}&select=*`
         : `select=*`
-      let res = await fetch(`${url}/rest/v1/${table}?${filter}`, { headers: getHeaders() })
+      let res = await fetch(`${url}/rest/v1/${table}?${filter}`, { headers: getHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
 
       // On 401, refresh token and retry once
       if (res.status === 401) {
@@ -362,14 +392,14 @@ async function pullRemoteChanges(url: string, key: string, initialToken: string,
         const newToken = await refreshAccessToken()
         if (newToken) {
           accessToken = newToken
-          res = await fetch(`${url}/rest/v1/${table}?${filter}`, { headers: getHeaders() })
+          res = await fetch(`${url}/rest/v1/${table}?${filter}`, { headers: getHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
         }
       }
 
       // On 400 with an incremental filter, the table likely lacks updated_at — retry as full pull
       if (res.status === 400 && lastPull) {
         slog(`[SYNC] Pull ${table} got 400 on incremental filter — retrying as full pull`)
-        res = await fetch(`${url}/rest/v1/${table}?select=*`, { headers: getHeaders() })
+        res = await fetch(`${url}/rest/v1/${table}?select=*`, { headers: getHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
       }
 
       if (!res.ok) {

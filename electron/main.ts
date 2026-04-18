@@ -513,7 +513,7 @@ ipcMain.handle('subscription:check', async () => {
     // Try to read existing subscription row
     const getRes = await net.fetch(
       `${supaUrl}/rest/v1/subscriptions?user_id=eq.${userId}&select=*&limit=1`,
-      { headers }
+      { headers, signal: AbortSignal.timeout(5000) }
     )
 
     type SubRow = {
@@ -536,7 +536,8 @@ ipcMain.handle('subscription:check', async () => {
       const createRes = await net.fetch(`${supaUrl}/rest/v1/subscriptions`, {
         method: 'POST',
         headers: { ...headers, 'Prefer': 'return=representation' },
-        body: JSON.stringify({ user_id: userId, status: 'trial', trial_end: trialEnd, tier: 'pro_plus' }), // trial gets full access
+        body: JSON.stringify({ user_id: userId, status: 'trial', trial_end: trialEnd, tier: 'pro_plus' }),
+        signal: AbortSignal.timeout(5000),
       })
       if (createRes.ok) {
         const created = await createRes.json() as Array<SubRow>
