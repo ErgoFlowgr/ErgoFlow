@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { ipc } from '../../lib/electron'
 import { useTranslation } from 'react-i18next'
@@ -188,6 +188,7 @@ export default function Invoices() {
   const { t } = useTranslation()
   const location = useLocation()
   const navigate = useNavigate()
+  const handledNavKey = useRef<string | null>(null)
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -226,15 +227,19 @@ export default function Invoices() {
   }
 
   const load = async () => {
+    // If this nav key was already handled (navigate-clear causes a second fire), skip
+    const currentKey = location.key
+    const state = location.state as { invoiceId?: string; fromJob?: { customer_id: string | null; customer_name: string | null; description: string | null; notes: string | null; job_id: string }; fromOffer?: { customer_id: string | null; customer_name: string | null; customer_address: string | null; offer_number: string; offer_id: string } } | null
+    const hasNavState = !!(state?.invoiceId || state?.fromJob || state?.fromOffer)
+
     let loadedInvoices: Invoice[] = []
     try { loadedInvoices = await getInvoices(); setInvoices(loadedInvoices) } catch { /* table may not exist yet */ }
     setCustomers(await getCustomers())
     setSettings(await getSettings())
     try { setCatalog(await getInventory()) } catch { /* ignore */ }
 
-    const state = location.state as { invoiceId?: string; fromJob?: { customer_id: string | null; customer_name: string | null; description: string | null; notes: string | null; job_id: string }; fromOffer?: { customer_id: string | null; customer_name: string | null; customer_address: string | null; offer_number: string; offer_id: string } } | null
-
-    if (!state) return
+    if (!hasNavState || handledNavKey.current === currentKey) return
+    handledNavKey.current = currentKey
     navigate('/invoices', { replace: true, state: null })
 
     if (state?.invoiceId) {
