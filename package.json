@@ -58,7 +58,7 @@
     "appId": "com.ergoflow.app",
     "productName": "Ergoflow",
     "directories": {
-      "output": "dist-installer"
+      "output": "C:/Users/Stavros/Desktop/Installers"
     },
     "files": [
       "dist/**/*",

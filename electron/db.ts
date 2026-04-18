@@ -293,6 +293,15 @@ function runMigrations() {
   tryAlter(`ALTER TABLE settings ADD COLUMN company_vat TEXT`)
   tryAlter(`ALTER TABLE settings ADD COLUMN mydata_user_id TEXT`)
   tryAlter(`ALTER TABLE settings ADD COLUMN mydata_api_key TEXT`)
+
+  // Deduplicate sync_queue (keep newest per table+record) and add unique index
+  // This fixes a bug where the same record was queued many times, causing sync hammering
+  try {
+    db.prepare(`DELETE FROM sync_queue WHERE id NOT IN (
+      SELECT MAX(id) FROM sync_queue GROUP BY table_name, record_id
+    )`).run()
+    db.prepare(`CREATE UNIQUE INDEX IF NOT EXISTS idx_sync_queue_unique ON sync_queue(table_name, record_id)`).run()
+  } catch { /* ignore — index may already exist */ }
 }
 
 /** Delete pending jobs older than 30 days that are not pinned. */

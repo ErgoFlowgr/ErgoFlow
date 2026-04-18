@@ -343,6 +343,12 @@ async function pushLocalChanges(url: string, key: string, accessToken: string, o
           slog('[SYNC] Token refresh failed — aborting push')
           return false
         }
+        // PGRST204 = column not found in Supabase schema — won't be fixed by retrying, drop from queue
+        if (res.status === 400 && body.includes('PGRST204')) {
+          slog(`[SYNC] Dropping ${item.table_name}/${item.record_id}: Supabase schema missing column (run migration)`)
+          db.prepare('DELETE FROM sync_queue WHERE id = ?').run(item.id)
+          continue
+        }
         slog(`[SYNC] Push failed ${item.table_name}/${item.record_id}: ${res.status} ${body.slice(0, 200)}`)
         anyFailure = true
         continue
