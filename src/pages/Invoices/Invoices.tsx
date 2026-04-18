@@ -387,6 +387,8 @@ export default function Invoices() {
       await upsertInvoice(invData, lineItems)
       await loadData()
       closeModal()
+    } catch (err) {
+      alert('Σφάλμα αποθήκευσης: ' + String(err))
     } finally {
       setSaving(false)
     }

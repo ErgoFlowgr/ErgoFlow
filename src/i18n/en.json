@@ -76,6 +76,7 @@
     "createJob": "Create Job",
     "createJobConfirm": "Create Job",
     "createJobWarning": "Offer {{number}} is {{status}}. Create a job from it?",
+    "createInvoiceBtn": "Invoice",
     "scheduledDate": "Scheduled Date (optional)",
     "status_pending": "pending",
     "status_accepted": "accepted",

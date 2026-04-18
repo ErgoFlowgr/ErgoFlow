@@ -76,6 +76,7 @@
     "createJob": "Δημιουργία Εργασίας",
     "createJobConfirm": "Δημιουργία Εργασίας",
     "createJobWarning": "Η προσφορά {{number}} είναι {{status}}. Να δημιουργηθεί εργασία;",
+    "createInvoiceBtn": "Τιμολόγιο",
     "scheduledDate": "Ημερομηνία (προαιρετικό)",
     "status_pending": "εκκρεμής",
     "status_accepted": "αποδεκτή",
