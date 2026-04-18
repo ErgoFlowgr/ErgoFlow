@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { useLocation } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { ipc } from '../../lib/electron'
 import { useTranslation } from 'react-i18next'
 import {
@@ -187,6 +187,7 @@ async function printInvoice(inv: Invoice, items: InvoiceItem[], settings: Settin
 export default function Invoices() {
   const { t } = useTranslation()
   const location = useLocation()
+  const navigate = useNavigate()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
@@ -217,6 +218,13 @@ export default function Invoices() {
   const [discountValue, setDiscountValue] = useState(0)
   const [notes, setNotes] = useState('')
 
+  const loadData = async () => {
+    try { setInvoices(await getInvoices()) } catch { /* table may not exist yet */ }
+    setCustomers(await getCustomers())
+    setSettings(await getSettings())
+    try { setCatalog(await getInventory()) } catch { /* ignore */ }
+  }
+
   const load = async () => {
     let loadedInvoices: Invoice[] = []
     try { loadedInvoices = await getInvoices(); setInvoices(loadedInvoices) } catch { /* table may not exist yet */ }
@@ -225,6 +233,8 @@ export default function Invoices() {
     try { setCatalog(await getInventory()) } catch { /* ignore */ }
 
     const state = location.state as { invoiceId?: string; fromJob?: { customer_id: string | null; customer_name: string | null; description: string | null; notes: string | null; job_id: string }; fromOffer?: { customer_id: string | null; customer_name: string | null; customer_address: string | null; offer_number: string; offer_id: string } } | null
+
+    navigate('/invoices', { replace: true, state: null })
 
     if (state?.invoiceId) {
       const target = loadedInvoices.find(i => i.id === state.invoiceId)
@@ -375,7 +385,7 @@ export default function Invoices() {
         sort_order: 0,
       }))
       await upsertInvoice(invData, lineItems)
-      await load()
+      await loadData()
       closeModal()
     } finally {
       setSaving(false)
@@ -385,7 +395,7 @@ export default function Invoices() {
   const handleDelete = async (id: string) => {
     await deleteInvoice(id)
     setDeleteConfirm(null)
-    await load()
+    await loadData()
   }
 
   const getCustomerVat = (inv: Invoice) =>
@@ -439,7 +449,7 @@ export default function Invoices() {
     )
     const invItems = await getInvoiceItems(inv.id)
     await submitInvoiceToMydata(inv, invItems)
-    await load()
+    await loadData()
   }
 
   const filters: FilterType[] = ['all', 'draft', 'pending', 'paid']
@@ -708,7 +718,7 @@ export default function Invoices() {
                       )
                       const invItems = await getInvoiceItems(editing.id)
                       await upsertInvoice({ ...editing, mydata_status: 'pending' }, invItems)
-                      await load()
+                      await loadData()
                       closeModal()
                     }}
                   >
