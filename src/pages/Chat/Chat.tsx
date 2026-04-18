@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getChatHistory, getDocuments, getSettings, getCustomers, insertChatMessage, updateChatMessage, upsertJob, upsertOffer, getNextOfferNumber, upsertInventoryItem, getInventory, uuid, type ChatMessage, type Document, type Customer } from '../../lib/db'
+import { getChatHistory, clearChatHistory, getDocuments, getSettings, getCustomers, insertChatMessage, updateChatMessage, upsertJob, upsertOffer, upsertCustomer, getNextOfferNumber, upsertInventoryItem, getInventory, uuid, type ChatMessage, type Document, type Customer } from '../../lib/db'
 import { chatWithActions, getAIConfig, type AIAction } from '../../lib/ai'
 import { processPDF } from '../../lib/pdf'
 import { ipc } from '../../lib/electron'
@@ -29,9 +29,21 @@ export default function Chat() {
   const [input, setInput] = useState('')
   const [thinking, setThinking] = useState(false)
   const [uploading, setUploading] = useState(false)
+  const [csvImporting, setCsvImporting] = useState(false)
+  const [csvImportResult, setCsvImportResult] = useState<string | null>(null)
   const [listening, setListening] = useState(false)
+  const [imageBase64, setImageBase64] = useState<string | null>(null)
+  const [imageMimeType, setImageMimeType] = useState<string>('image/jpeg')
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [showCamera, setShowCamera] = useState(false)
+  const [confirmClear, setConfirmClear] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
+  const csvRef  = useRef<HTMLInputElement>(null)
+  const imageRef = useRef<HTMLInputElement>(null)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const recognitionRef = useRef<SpeechRecognition | null>(null)
 
   useEffect(() => {
@@ -117,6 +129,17 @@ export default function Chat() {
           })
           await completeAction(msgId, `"${found.name}" updated · ${(action.item_price ?? found.price).toFixed(2)} €`)
         }
+
+      } else if (action.type === 'create_customer' && action.contact_name) {
+        await upsertCustomer({
+          name: action.contact_name,
+          company_name: action.contact_company ?? null,
+          phone: action.contact_phone ?? null,
+          email: action.contact_email ?? null,
+          address: action.contact_address ?? null,
+        })
+        setCustomers(await getCustomers())
+        await completeAction(msgId, `Contact "${action.contact_name}" added`)
 
       } else if (action.type === 'create_job' && action.title) {
         await upsertJob({
@@ -214,7 +237,7 @@ export default function Chat() {
     }
   }
 
-  const sendText = async (text: string) => {
+  const sendText = async (text: string, imgBase64?: string, imgMime?: string) => {
     if (!text || thinking) return
 
     const userMsg: ChatMessage = { id: uuid(), role: 'user', content: text, created_at: new Date().toISOString() }
@@ -224,15 +247,16 @@ export default function Chat() {
     setThinking(true)
     try {
       const settings = await getSettings()
-      const config = await getAIConfig(settings.ai_provider, settings.ollama_url, settings.ollama_chat_model, settings.ollama_embed_model, settings.claude_api_key, !!settings.allow_web_search, settings.brave_search_key)
+      const config = await getAIConfig(settings.ai_provider, settings.ollama_url, settings.ollama_chat_model, settings.ollama_embed_model, settings.claude_api_key, !!settings.allow_web_search, settings.brave_search_key, settings.image_model, settings.ollama_vision_model, i18n.language)
       const history = messages.slice(-10).map(m => ({ role: m.role, content: m.content }))
+      const inventoryItems = await getInventory()
       const { text: reply, action, usedCloudFallback } = await chatWithActions(text, history, config, customers, {
         companyName: settings.company_name,
         ownerName: settings.owner_name,
         ownerLastName: settings.owner_last_name,
         phone: settings.phone,
         address: settings.address,
-      })
+      }, imgBase64, imgMime, inventoryItems)
 
       const assistantId = uuid()
       const fullReply = usedCloudFallback
@@ -259,7 +283,61 @@ export default function Chat() {
     const text = input.trim()
     if (!text) return
     setInput('')
-    await sendText(text)
+    const img = imageBase64 ?? undefined
+    const mime = imageMimeType
+    setImageBase64(null)
+    setImagePreview(null)
+    await sendText(text, img, mime)
+  }
+
+  const pickImage = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => {
+      const dataUrl = reader.result as string
+      const base64 = dataUrl.split(',')[1]
+      setImageBase64(base64)
+      setImageMimeType(file.type || 'image/jpeg')
+      setImagePreview(dataUrl)
+    }
+    reader.readAsDataURL(file)
+    if (imageRef.current) imageRef.current.value = ''
+  }
+
+  const openCamera = async () => {
+    setShowCamera(true)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        videoRef.current.play()
+      }
+    } catch {
+      alert('Could not access camera. Please allow camera permissions.')
+      setShowCamera(false)
+    }
+  }
+
+  const closeCamera = () => {
+    streamRef.current?.getTracks().forEach(t => t.stop())
+    streamRef.current = null
+    setShowCamera(false)
+  }
+
+  const capturePhoto = () => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas) return
+    canvas.width = video.videoWidth
+    canvas.height = video.videoHeight
+    canvas.getContext('2d')!.drawImage(video, 0, 0)
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92)
+    setImageBase64(dataUrl.split(',')[1])
+    setImageMimeType('image/jpeg')
+    setImagePreview(dataUrl)
+    closeCamera()
   }
 
   const uploadPDF = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -275,6 +353,78 @@ export default function Chat() {
     } finally {
       setUploading(false)
       if (fileRef.current) fileRef.current.value = ''
+    }
+  }
+
+  const importContactsCsv = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setCsvImporting(true)
+    setCsvImportResult(null)
+    try {
+      // Strip BOM and normalize line endings
+      let text = await file.text()
+      text = text.replace(/^\uFEFF/, '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+
+      // Detect delimiter
+      const firstLine = text.split('\n')[0]
+      const delim = (firstLine.split(';').length > firstLine.split(',').length) ? ';' : ','
+
+      const lines = text.split('\n').filter(l => l.trim())
+      if (lines.length < 2) { setCsvImportResult('Δεν βρέθηκαν επαφές.'); return }
+
+      const parseLine = (line: string) => {
+        const fields: string[] = []; let cur = '', inQ = false
+        for (let i = 0; i < line.length; i++) {
+          if (line[i] === '"') inQ = !inQ
+          else if (line[i] === delim && !inQ) { fields.push(cur.trim()); cur = '' }
+          else cur += line[i]
+        }
+        fields.push(cur.trim()); return fields
+      }
+
+      const rawHeaders = parseLine(lines[0])
+      const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zα-ω0-9]/g, '')
+      const headers = rawHeaders.map(norm)
+
+      const mapField = (h: string): string | null => {
+        if (/name|fullname|displayname|ονοματ|πελατ/.test(h)) return 'name'
+        if (/firstname|first/.test(h)) return 'first_name'
+        if (/lastname|last|επωνυμ/.test(h)) return 'last_name'
+        if (/company|εταιρ/.test(h)) return 'company_name'
+        if (/^(phone|telephone|τηλεφ|τηλ)$/.test(h)) return 'phone'
+        if (/mobile|cell|κινητ/.test(h)) return 'mobile'
+        if (/email|mail/.test(h)) return 'email'
+        if (/address|διευθ/.test(h)) return 'address'
+        if (/^city$|πολ/.test(h)) return 'city'
+        if (/postal|zip|^τκ$/.test(h)) return 'postal_code'
+        if (/^vat$|^afm$|^αφμ$/.test(h)) return 'vat_number'
+        if (/notes|σημειω/.test(h)) return 'notes'
+        return null
+      }
+
+      const mappings = headers.map(mapField)
+      let count = 0
+
+      for (const line of lines.slice(1)) {
+        if (!line.trim()) continue
+        const vals = parseLine(line)
+        const row: Record<string, string> = {}
+        mappings.forEach((f, i) => { if (f && vals[i]?.trim()) row[f] = vals[i].trim() })
+        const name = row.name ||
+          [row.first_name, row.last_name].filter(Boolean).join(' ') ||
+          row.company_name || row.phone || row.mobile || row.email
+        if (!name) continue
+        await upsertCustomer({ id: uuid(), name, ...row } as Customer)
+        count++
+      }
+
+      setCsvImportResult(count > 0 ? `✓ ${count} επαφές εισήχθησαν` : `Δεν αναγνωρίστηκαν στήλες. Κεφαλίδες: ${rawHeaders.join(', ')}`)
+    } catch (err) {
+      setCsvImportResult(`Σφάλμα: ${String(err)}`)
+    } finally {
+      setCsvImporting(false)
+      if (csvRef.current) csvRef.current.value = ''
     }
   }
 
@@ -313,8 +463,9 @@ export default function Chat() {
         <div className="p-4 border-b border-surface-600">
           <h2 className="font-semibold text-sm text-gray-300 uppercase tracking-wider mb-3">PDFs</h2>
           <input ref={fileRef} type="file" accept=".pdf" className="hidden" onChange={uploadPDF} />
+          <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={importContactsCsv} />
           <button
-            className="btn-primary w-full justify-center text-sm"
+            className="btn-primary w-full justify-center text-sm mb-2"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
           >
@@ -332,6 +483,30 @@ export default function Chat() {
               </>
             )}
           </button>
+          <button
+            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs font-medium rounded-lg transition-colors"
+            onClick={() => { setCsvImportResult(null); csvRef.current?.click() }}
+            disabled={csvImporting}
+          >
+            {csvImporting ? (
+              <span className="flex items-center gap-2">
+                <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+                Εισαγωγή...
+              </span>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Import Contacts CSV
+              </>
+            )}
+          </button>
+          {csvImportResult && (
+            <p className={`text-xs mt-2 text-center ${csvImportResult.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>
+              {csvImportResult}
+            </p>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto p-3 space-y-2">
@@ -353,8 +528,23 @@ export default function Chat() {
 
       {/* Chat area */}
       <div className="flex-1 flex flex-col">
-        <div className="p-4 border-b border-surface-600">
+        <div className="p-4 border-b border-surface-600 flex items-center justify-between">
           <h1 className="text-xl font-bold">{t('chat.title')}</h1>
+          {messages.length > 0 && (
+            <button
+              className={`text-xs px-3 py-1.5 rounded-lg transition-colors ${confirmClear ? 'bg-red-500 text-white' : 'text-gray-500 hover:text-red-400 hover:bg-red-500/10'}`}
+              onClick={async () => {
+                if (!confirmClear) { setConfirmClear(true); return }
+                await clearChatHistory()
+                setMessages([])
+                setActionCards([])
+                setConfirmClear(false)
+              }}
+              onBlur={() => setConfirmClear(false)}
+            >
+              {confirmClear ? t('chat.clearConfirm') : t('chat.clearHistory')}
+            </button>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto p-4 space-y-4">
@@ -427,6 +617,21 @@ export default function Chat() {
 
         {/* Input */}
         <div className="p-4 border-t border-surface-600">
+          {/* Image preview */}
+          {imagePreview && (
+            <div className="mb-3 flex items-start gap-2">
+              <img src={imagePreview} alt="preview" className="h-20 rounded-lg object-cover border border-surface-500" />
+              <button
+                className="text-gray-500 hover:text-white mt-1"
+                onClick={() => { setImageBase64(null); setImagePreview(null) }}
+                title="Remove image"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          )}
           <div className="flex gap-3">
             <input
               className="input flex-1"
@@ -436,6 +641,23 @@ export default function Chat() {
               onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
               disabled={thinking}
             />
+            {/* Camera button */}
+            <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
+            <button
+              className={`px-3 rounded-lg border transition-colors ${
+                imageBase64
+                  ? 'bg-brand-500/20 border-brand-500/50 text-brand-400'
+                  : 'border-surface-600 text-gray-400 hover:text-white hover:bg-surface-700'
+              }`}
+              onClick={openCamera}
+              disabled={thinking}
+              title="Take a photo (business card, product label...)"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
             {/* Microphone button */}
             <button
               className={`px-3 rounded-lg border transition-colors ${
@@ -459,6 +681,40 @@ export default function Chat() {
           </div>
         </div>
       </div>
+      {/* Camera modal */}
+      {showCamera && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <div className="bg-surface-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ width: 520 }}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-surface-600">
+              <span className="font-semibold text-sm">Take a Photo</span>
+              <button className="text-gray-400 hover:text-white" onClick={closeCamera}>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="relative bg-black">
+              <video ref={videoRef} className="w-full" style={{ maxHeight: 360 }} autoPlay playsInline muted />
+            </div>
+            <div className="flex gap-3 p-4">
+              <button className="btn-primary flex-1 justify-center gap-2" onClick={capturePhoto}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="4" strokeWidth={2} />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                </svg>
+                Capture
+              </button>
+              <button
+                className="px-4 py-2 rounded-lg border border-surface-600 text-gray-400 hover:text-white hover:bg-surface-700 text-sm"
+                onClick={() => { closeCamera(); imageRef.current?.click() }}
+              >
+                Choose file instead
+              </button>
+            </div>
+          </div>
+          <canvas ref={canvasRef} className="hidden" />
+        </div>
+      )}
     </div>
   )
 }

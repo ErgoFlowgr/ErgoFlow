@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getSupabaseConfig, isElectron, ipc } from '../../lib/electron'
 
-interface Props { onAuth: () => void }
+interface Props { onAuth: (isNewAccount: boolean) => void }
 
 type Mode = 'signin' | 'signup'
+
 
 export default function Auth({ onAuth }: Props) {
   const [mode, setMode] = useState<Mode>('signin')
@@ -13,6 +14,13 @@ export default function Auth({ onAuth }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
+  const [storedToken, setStoredToken] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (isElectron) {
+      ipc.keychain.get('supabase_access_token').then(t => setStoredToken(t))
+    }
+  }, [])
 
   const storeToken = async (accessToken: string, refreshToken?: string) => {
     if (isElectron) {
@@ -22,6 +30,12 @@ export default function Auth({ onAuth }: Props) {
       localStorage.setItem('supabase_access_token', accessToken)
       if (refreshToken) localStorage.setItem('supabase_refresh_token', refreshToken)
     }
+  }
+
+  const continueOffline = async () => {
+    if (!storedToken) return
+    await ipc.db.switch(storedToken)
+    onAuth(false)  // existing account — skip onboarding
   }
 
   const handleSubmit = async () => {
@@ -36,10 +50,8 @@ export default function Auth({ onAuth }: Props) {
     setLoading(true)
     try {
       const config = await getSupabaseConfig()
-
       if (!config) {
-        // No Supabase configured — allow offline mode
-        onAuth()
+        setError('No server configuration found.')
         return
       }
 
@@ -51,15 +63,18 @@ export default function Auth({ onAuth }: Props) {
           headers: { 'Content-Type': 'application/json', apikey: anonKey },
           body: JSON.stringify({ email, password }),
         })
-        const data = await res.json() as { access_token?: string; refresh_token?: string; error_description?: string }
+        const data = await res.json() as { access_token?: string; refresh_token?: string; user?: { id?: string }; error_description?: string }
 
         if (!res.ok) {
           setError(data.error_description ?? 'Sign in failed')
           return
         }
 
+        // Pass the user UUID directly — no JWT decoding needed
+        if (isElectron && data.user?.id) await ipc.db.switch(data.user.id)
         await storeToken(data.access_token ?? '', data.refresh_token)
-        onAuth()
+        if (isElectron) ipc.syncNow()  // trigger sync now that token is stored
+        onAuth(false)  // sign-in — skip onboarding
 
       } else {
         // Sign up
@@ -71,7 +86,7 @@ export default function Auth({ onAuth }: Props) {
         const data = await res.json() as {
           access_token?: string
           refresh_token?: string
-          user?: { confirmation_sent_at?: string }
+          user?: { id?: string; confirmation_sent_at?: string }
           error_description?: string
           msg?: string
         }
@@ -82,11 +97,10 @@ export default function Auth({ onAuth }: Props) {
         }
 
         if (data.access_token) {
-          // Email confirmation disabled — signed in immediately
+          if (isElectron && data.user?.id) await ipc.db.switch(data.user.id)
           await storeToken(data.access_token, data.refresh_token)
-          onAuth()
+          onAuth(true)  // new account — show onboarding
         } else {
-          // Email confirmation required
           setInfo('Account created! Check your email to confirm, then sign in.')
           setMode('signin')
           setPassword('')
@@ -94,8 +108,7 @@ export default function Auth({ onAuth }: Props) {
         }
       }
     } catch {
-      setError('Network error — continuing offline')
-      onAuth()
+      setError('Network error — check your connection')
     } finally {
       setLoading(false)
     }
@@ -189,9 +202,11 @@ export default function Auth({ onAuth }: Props) {
             }
           </button>
 
-          <button className="btn-ghost w-full justify-center text-sm" onClick={onAuth}>
-            Continue offline →
-          </button>
+          {storedToken && (
+            <button className="btn-ghost w-full justify-center text-sm" onClick={continueOffline}>
+              Continue offline →
+            </button>
+          )}
         </div>
       </div>
     </div>

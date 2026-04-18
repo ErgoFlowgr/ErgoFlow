@@ -3,7 +3,7 @@
  * Provider is determined by app settings.
  */
 import { ipc } from './electron'
-import { searchChunks, type Customer } from './db'
+import { searchChunks, type Customer, type InventoryItem } from './db'
 
 type BraveResult = { web?: { results?: Array<{ title: string; description: string; url: string }> } }
 
@@ -15,8 +15,11 @@ interface AIConfig {
   ollamaUrl?: string
   ollamaChatModel?: string
   ollamaEmbedModel?: string
+  ollamaVisionModel?: string  // Local vision model (e.g. llava) — describes image, then passes to chat model
   allowWebSearch?: boolean
   braveApiKey?: string
+  imageModel?: string  // Claude model used when processing images
+  language?: string    // App language ('el' or 'en') — used for web search locale
 }
 
 // ── Embeddings ─────────────────────────────────────────────────────────────
@@ -24,12 +27,10 @@ interface AIConfig {
 export async function getEmbedding(text: string, config: AIConfig): Promise<number[]> {
   if (config.provider === 'ollama') {
     const model = config.ollamaEmbedModel ?? 'nomic-embed-text'
-    const res = await fetch(`${config.ollamaUrl}/api/embeddings`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model, prompt: text }),
-    })
-    const data = await res.json() as { embedding: number[] }
+    const data = await ipc.ollama.embeddings(
+      config.ollamaUrl!,
+      JSON.stringify({ model, prompt: text })
+    )
     return data.embedding
   } else {
     if (!config.claudeApiKey) throw new Error('Claude API key not configured')
@@ -62,8 +63,8 @@ function textToVector(text: string): number[] {
 
 // ── Web Search ─────────────────────────────────────────────────────────────
 
-async function webSearch(query: string, apiKey: string): Promise<string> {
-  const data = await ipc.braveSearch(query, apiKey) as BraveResult
+async function webSearch(query: string, apiKey: string, lang?: string): Promise<string> {
+  const data = await ipc.braveSearch(query, apiKey, lang) as BraveResult
   const results = data.web?.results ?? []
   if (results.length === 0) return 'No web results found.'
   return results.map((r, i) => `${i + 1}. ${r.title}\n${r.description}\nSource: ${r.url}`).join('\n\n')
@@ -101,8 +102,20 @@ async function chatClaude(
   message: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   system: string,
-  apiKey: string
+  apiKey: string,
+  imageBase64?: string,
+  imageMimeType?: string,
+  imageModel?: string
 ): Promise<string> {
+  const userContent = imageBase64
+    ? [
+        { type: 'image', source: { type: 'base64', media_type: imageMimeType ?? 'image/jpeg', data: imageBase64 } },
+        { type: 'text', text: message },
+      ]
+    : message
+
+  const model = imageBase64 && imageModel ? imageModel : 'claude-sonnet-4-6'
+
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -111,10 +124,10 @@ async function chatClaude(
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: 'claude-sonnet-4-6',
+      model,
       max_tokens: 1024,
       system,
-      messages: [...history.slice(-10), { role: 'user', content: message }],
+      messages: [...history.slice(-10), { role: 'user', content: userContent }],
     }),
   })
 
@@ -128,31 +141,31 @@ async function chatOllama(
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   system: string,
   ollamaUrl: string,
-  model = 'qwen2.5:latest'
+  model = 'qwen2.5:latest',
+  imageBase64?: string
 ): Promise<string> {
-  const res = await fetch(`${ollamaUrl}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  const userMsg: Record<string, unknown> = { role: 'user', content: message }
+  if (imageBase64) userMsg.images = [imageBase64]
+
+  const data = await ipc.ollama.chat(
+    ollamaUrl,
+    JSON.stringify({
       model,
       stream: false,
       messages: [
         { role: 'system', content: system },
         ...history.slice(-10),
-        { role: 'user', content: message },
+        userMsg,
       ],
-    }),
-  })
-
-  if (!res.ok) throw new Error(`Ollama error: HTTP ${res.status}`)
-  const data = await res.json() as { message: { content: string } }
+    })
+  )
   return data.message.content
 }
 
 // ── Chat with Actions (job creation / editing via AI) ──────────────────────
 
 export interface AIAction {
-  type: 'create_job' | 'update_job' | 'download_pdfs' | 'scrape_page' | 'create_offer' | 'add_inventory_item' | 'update_inventory_item'
+  type: 'create_job' | 'update_job' | 'download_pdfs' | 'scrape_page' | 'create_offer' | 'add_inventory_item' | 'update_inventory_item' | 'create_customer'
   title?: string
   customer_name?: string
   customer_id?: string | null
@@ -174,6 +187,12 @@ export interface AIAction {
   item_unit?: string
   item_price?: number
   item_notes?: string
+  // create_customer fields
+  contact_name?: string
+  contact_phone?: string
+  contact_email?: string
+  contact_company?: string
+  contact_address?: string
 }
 
 export interface AIActionResult {
@@ -214,7 +233,10 @@ export async function chatWithActions(
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   config: AIConfig,
   customers: Customer[],
-  companyInfo?: { companyName?: string | null; ownerName?: string | null; ownerLastName?: string | null; phone?: string | null; address?: string | null }
+  companyInfo?: { companyName?: string | null; ownerName?: string | null; ownerLastName?: string | null; phone?: string | null; address?: string | null },
+  imageBase64?: string,
+  imageMimeType?: string,
+  inventory?: InventoryItem[]
 ): Promise<AIActionResult> {
   const embedding = await getEmbedding(userMessage, config)
   const chunks = await searchChunks(embedding, 3)
@@ -231,9 +253,9 @@ export async function chatWithActions(
   let webResults = ''
   let pdfResults = ''
   if (config.allowWebSearch && config.braveApiKey) {
-    try { webResults = await webSearch(userMessage, config.braveApiKey) } catch { /* ignore */ }
+    try { webResults = await webSearch(userMessage, config.braveApiKey, config.language) } catch { /* ignore */ }
     if (pdfIntent) {
-      try { pdfResults = await webSearch(userMessage + ' filetype:pdf', config.braveApiKey) } catch { /* ignore */ }
+      try { pdfResults = await webSearch(userMessage + ' filetype:pdf', config.braveApiKey, config.language) } catch { /* ignore */ }
     }
   }
 
@@ -241,6 +263,11 @@ export async function chatWithActions(
   const extractPdfUrls = (text: string) =>
     [...text.matchAll(/https?:\/\/[^\s)]+\.pdf/gi)].map(m => m[0])
   const foundPdfUrls = [...new Set([...extractPdfUrls(webResults), ...extractPdfUrls(pdfResults)])]
+
+  const inventoryBlock = inventory && inventory.length > 0
+    ? `\nPRICE CATALOG (IMPORTANT: use ONLY these exact prices when creating offers — do NOT guess or invent prices):\n` +
+      inventory.map(i => `  - ${i.name}${i.code ? ' [' + i.code + ']' : ''}: ${i.price}€ / ${i.unit}`).join('\n') + '\n'
+    : ''
 
   const ownerFullName = [companyInfo?.ownerName, companyInfo?.ownerLastName].filter(Boolean).join(' ')
   const companyBlock = companyInfo ? `
@@ -256,14 +283,14 @@ BUSINESS INFO (use this when generating offers/documents — never use placehold
 2. Create and manage jobs in the CRM
 3. Create offers/quotes for customers${config.allowWebSearch ? '\n4. Use web search results when provided to answer current/online questions' : ''}
 
-LANGUAGE RULE: Always respond in the same language the user writes in. If they write in Greek, reply in Greek. If English, reply in English. Never switch languages unless asked. NEVER translate or transliterate brand names, product names, model numbers, or codes — keep them exactly as written (e.g. "Samsung Wind-Free", "SAM-WF12", "Tesla 9000 BTU" stay in Latin characters always).
+LANGUAGE RULE: The app is set to ${config.language === 'en' ? 'English' : 'Greek (Ελληνικά)'}. Always respond in the same language the user writes in. If they write in Greek, reply in Greek (Ελληνικά). If they write in English, reply in English. Never switch languages unless explicitly asked to. NEVER translate or transliterate brand names, product names, model numbers, or codes — keep them exactly as written (e.g. "Samsung Wind-Free", "SAM-WF12", "Tesla 9000 BTU" stay in Latin characters always).
 
 TODAY: ${today}
 ${companyBlock}
 EXISTING CUSTOMERS:
 ${customerList}
 
-${context ? `PRODUCT DOCUMENTATION:\n${context}\n` : ''}${webResults ? `WEB SEARCH RESULTS:\n${webResults}\n` : ''}${foundPdfUrls.length > 0 ? `\nDIRECT PDF URLS FOUND (use ONLY these, never invent URLs):\n${foundPdfUrls.map((u, i) => `${i + 1}. ${u}`).join('\n')}\n` : ''}
+${inventoryBlock}${context ? `PRODUCT DOCUMENTATION:\n${context}\n` : ''}${webResults ? `WEB SEARCH RESULTS:\n${webResults}\n` : ''}${foundPdfUrls.length > 0 ? `\nDIRECT PDF URLS FOUND (use ONLY these, never invent URLs):\n${foundPdfUrls.map((u, i) => `${i + 1}. ${u}`).join('\n')}\n` : ''}
 IMPORTANT — When the user wants to create a job, schedule work, or book a visit:
 - Match the customer name to an existing customer if possible (use their exact id)
 - Extract the type of work as the job title
@@ -287,6 +314,7 @@ When the user asks to scrape a webpage or find PDFs on a specific website URL:
 IMPORTANT — When the user wants to create an offer, quote, or προσφορά:
 - Match the customer name to an existing customer if possible (use their exact id)
 - Break down the work into line items (description, quantity, unit_price)
+- For unit_price: ALWAYS use the exact price from the PRICE CATALOG above if the item matches. Only use 0 if genuinely unknown and not in the catalog.
 - Default tax_rate is 24 (Greek VAT) unless specified otherwise
 - DO NOT write a formal offer letter in the chat — just confirm briefly AND ALWAYS include this action block:
 <action>{"type":"create_offer","customer_name":"...","customer_id":"<uuid or null>","offer_items":[{"description":"...","quantity":1,"unit_price":0}],"tax_rate":24}</action>
@@ -302,6 +330,17 @@ IMPORTANT — When the user wants to update the price or details of an existing 
 <action>{"type":"update_inventory_item","item_code":"...","item_price":0}</action>
 OR if no code: <action>{"type":"update_inventory_item","item_name":"...","item_price":0}</action>
 
+IMPORTANT — When the user shares an image of a business card or contact:
+- Extract all visible details (name, company, phone, email, address)
+- Confirm briefly what you found AND append the action block silently:
+<action>{"type":"create_customer","contact_name":"Full Name","contact_company":"Company","contact_phone":"+30...","contact_email":"...","contact_address":"..."}</action>
+- Only include fields clearly visible in the image. contact_name is required; use company name if no personal name is visible.
+
+IMPORTANT — When the user shares an image of a product, label, or box and wants to add it to the catalog:
+- Extract: product name/model, any code/SKU, category — respond briefly AND append the action block silently:
+<action>{"type":"add_inventory_item","item_name":"...","item_code":"...","item_unit":"τεμ.","item_price":0,"item_notes":"..."}</action>
+- Set item_price to 0 if price is not visible — the user can update it later.
+
 Only include ONE <action> block per response. Never include it for questions or general chat. NEVER say "Here's the action block" or describe the block — just include it.`
 
   let raw: string
@@ -309,18 +348,36 @@ Only include ONE <action> block per response. Never include it for questions or 
 
   if (config.provider === 'ollama') {
     try {
-      raw = await chatOllama(userMessage, history, systemPrompt, config.ollamaUrl!, config.ollamaChatModel)
+      let messageToSend = userMessage
+      let imageForChat = imageBase64
+
+      // Two-step vision: use vision model to describe image, then pass description to reasoning model
+      if (imageBase64 && config.ollamaVisionModel) {
+        const visionResult = await ipc.ollama.chat(
+          config.ollamaUrl!,
+          JSON.stringify({
+            model: config.ollamaVisionModel,
+            stream: false,
+            messages: [{ role: 'user', content: 'Describe this image in detail. Extract all visible text, numbers, product names, model codes, labels, and any other relevant information.', images: [imageBase64] }],
+          })
+        )
+        const imageDescription = visionResult.message.content
+        messageToSend = `${userMessage}\n\n[Image description from vision model: ${imageDescription}]`
+        imageForChat = undefined  // don't pass raw image to reasoning model
+      }
+
+      raw = await chatOllama(messageToSend, history, systemPrompt, config.ollamaUrl!, config.ollamaChatModel, imageForChat)
     } catch {
       // Ollama unreachable (offline or mobile) — fall back to Claude if key available
       if (config.claudeApiKey) {
-        raw = await chatClaude(userMessage, history, systemPrompt, config.claudeApiKey)
+        raw = await chatClaude(userMessage, history, systemPrompt, config.claudeApiKey, imageBase64, imageMimeType, config.imageModel)
         usedCloudFallback = true
       } else {
         throw new Error('Ollama is offline and no Claude API key is configured as fallback.')
       }
     }
   } else {
-    raw = await chatClaude(userMessage, history, systemPrompt, config.claudeApiKey!)
+    raw = await chatClaude(userMessage, history, systemPrompt, config.claudeApiKey!, imageBase64, imageMimeType, config.imageModel)
   }
 
   return { ...parseAction(raw), usedCloudFallback }
@@ -369,7 +426,10 @@ export async function getAIConfig(
   ollamaEmbedModel?: string,
   settingsClaudeKey?: string | null,
   allowWebSearch?: boolean,
-  braveApiKey?: string | null
+  braveApiKey?: string | null,
+  imageModel?: string | null,
+  ollamaVisionModel?: string | null,
+  language?: string
 ): Promise<AIConfig> {
   // Always fetch the Claude key — needed as fallback when Ollama is offline (e.g. Android)
   const claudeApiKey =
@@ -383,7 +443,10 @@ export async function getAIConfig(
     ollamaUrl: ollamaUrl ?? 'http://localhost:11434',
     ollamaChatModel: ollamaChatModel ?? 'qwen2.5:latest',
     ollamaEmbedModel: ollamaEmbedModel ?? 'nomic-embed-text',
+    ollamaVisionModel: ollamaVisionModel ?? undefined,
     allowWebSearch: allowWebSearch ?? false,
     braveApiKey: braveApiKey ?? undefined,
+    imageModel: imageModel ?? 'claude-sonnet-4-6',
+    language: language ?? 'el',
   }
 }

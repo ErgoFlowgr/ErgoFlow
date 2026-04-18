@@ -9,7 +9,7 @@
     "start": "node scripts/start-dev.js",
     "build": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "electron:build": "npm run build && npm run build:electron && electron-builder --win",
+    "electron:build": "npm run build && npm run build:electron && electron-builder --win && node -e \"require('fs').copyFileSync('dist-installer/Ergoflow Setup 1.0.0.exe', require('path').join(require('os').homedir(), 'Desktop', 'Installers', 'Ergoflow Setup 1.0.0.exe'))\"",
     "rebuild": "electron-rebuild -f -w better-sqlite3 keytar",
     "preview": "vite preview"
   },
@@ -19,6 +19,7 @@
     "@capacitor/core": "^7.2.0",
     "@supabase/supabase-js": "^2.49.1",
     "better-sqlite3": "^11.9.1",
+    "electron-updater": "^6.8.3",
     "i18next": "^25.1.2",
     "keytar": "^7.9.0",
     "pdf-parse": "^1.1.1",
@@ -43,7 +44,9 @@
     "cross-env": "^7.0.3",
     "electron": "^35.7.5",
     "electron-builder": "^25.1.8",
+    "jimp": "^1.6.0",
     "postcss": "^8.5.3",
+    "sharp": "^0.34.5",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.8.3",
     "vite": "^6.3.1",
@@ -73,6 +76,11 @@
       "installerHeaderIcon": "assets/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "ErgoFlowgr",
+      "repo": "ErgoFlow"
     }
   }
 }

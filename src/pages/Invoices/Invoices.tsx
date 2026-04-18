@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { ipc } from '../../lib/electron'
 import { useTranslation } from 'react-i18next'
 import {
   getInvoices, getInvoiceItems, getNextInvoiceNumber, upsertInvoice, deleteInvoice,
-  getCustomers, getSettings, uuid,
-  type Invoice, type InvoiceItem, type Customer, type Settings,
+  submitInvoiceToMydata, getCustomers, getSettings, getInventory, getOfferItems, uuid,
+  type Invoice, type InvoiceItem, type Customer, type Settings, type InventoryItem,
 } from '../../lib/db'
 
-type FilterType = 'all' | 'draft' | 'sent' | 'paid'
+type FilterType = 'all' | 'draft' | 'pending' | 'paid'
 
 interface LineItem {
   id: string
@@ -23,7 +24,7 @@ function formatCurrency(n: number) {
   return n.toLocaleString('el-GR', { style: 'currency', currency: 'EUR' })
 }
 
-async function printInvoice(inv: Invoice, items: InvoiceItem[], settings: Settings | null) {
+function buildInvoiceHtml(inv: Invoice, items: InvoiceItem[], settings: Settings | null, customerVat?: string): string {
   const company   = settings?.company_name ?? ''
   const ownerName = settings?.owner_name   ?? ''
   const phone     = settings?.phone        ?? ''
@@ -43,7 +44,7 @@ async function printInvoice(inv: Invoice, items: InvoiceItem[], settings: Settin
       <td class="td-right">${it.total.toFixed(2)} €</td>
     </tr>`).join('')
 
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="el"><head><meta charset="UTF-8"><title>${inv.number}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -126,6 +127,7 @@ async function printInvoice(inv: Invoice, items: InvoiceItem[], settings: Settin
     <h3>Αγοραστής / Bill To</h3>
     <p class="name">${inv.customer_name ?? '—'}</p>
     ${inv.customer_address ? `<p>${inv.customer_address}</p>` : ''}
+    ${customerVat ? `<p>ΑΦΜ: ${customerVat}</p>` : ''}
   </div>
 </div>
 
@@ -170,25 +172,35 @@ async function printInvoice(inv: Invoice, items: InvoiceItem[], settings: Settin
 
 ${inv.notes ? `<div class="notes-box"><strong>Σημειώσεις / Notes:</strong> ${inv.notes}</div>` : ''}
 
+${inv.mydata_mark ? `<div style="margin-bottom:14px;padding:8px 14px;border:1px solid #2a6b3a;border-radius:4px;background:#f0fff4;font-size:12px;color:#1a4a2a;display:flex;align-items:center;gap:8px"><strong>ΜΑΡΚ myDATA:</strong> <span style="font-family:monospace;font-weight:700;font-size:13px">${inv.mydata_mark}</span></div>` : ''}
+
 <!-- Footer -->
 <div class="footer">Σας ευχαριστούμε για την εμπιστοσύνη σας &bull; Thank you for your business</div>
 
 </body></html>`
+}
 
-  await ipc.printInvoice(html)
+async function printInvoice(inv: Invoice, items: InvoiceItem[], settings: Settings | null, customerVat?: string) {
+  await ipc.printInvoice(buildInvoiceHtml(inv, items, settings, customerVat))
 }
 
 export default function Invoices() {
   const { t } = useTranslation()
+  const location = useLocation()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   const [filter, setFilter] = useState<FilterType>('all')
+  const [showTotals, setShowTotals] = useState(false)
+  const [yearFilter, setYearFilter] = useState<number | 'prev'>(new Date().getFullYear())
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState<Invoice | null>(null)
   const [items, setItems] = useState<LineItem[]>([emptyLine()])
   const [saving, setSaving] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [catalog, setCatalog] = useState<InventoryItem[]>([])
+  const [showCatalog, setShowCatalog] = useState(false)
+  const [catalogSearch, setCatalogSearch] = useState('')
 
   // Form state
   const [number, setNumber] = useState('')
@@ -206,20 +218,70 @@ export default function Invoices() {
   const [notes, setNotes] = useState('')
 
   const load = async () => {
-    try { setInvoices(await getInvoices()) } catch { /* table may not exist yet */ }
+    let loadedInvoices: Invoice[] = []
+    try { loadedInvoices = await getInvoices(); setInvoices(loadedInvoices) } catch { /* table may not exist yet */ }
     setCustomers(await getCustomers())
     setSettings(await getSettings())
+    try { setCatalog(await getInventory()) } catch { /* ignore */ }
+
+    const state = location.state as { invoiceId?: string; fromJob?: { customer_id: string | null; customer_name: string | null; description: string | null; notes: string | null; job_id: string }; fromOffer?: { customer_id: string | null; customer_name: string | null; customer_address: string | null; offer_number: string; offer_id: string } } | null
+
+    if (state?.invoiceId) {
+      const target = loadedInvoices.find(i => i.id === state.invoiceId)
+      if (target) {
+        const existingItems = await getInvoiceItems(target.id)
+        setEditing(target); setNumber(target.number); setCustomerId(target.customer_id ?? ''); setCustomerName(target.customer_name ?? '')
+        setCustomerAddress(target.customer_address ?? ''); setStatus(target.status); setIssueDate(target.issue_date ?? '')
+        setDueDate(target.due_date ?? ''); setDocType(target.document_type ?? 'invoice'); setTaxRate(target.tax_rate)
+        setDiscountType(target.discount_type ?? null); setDiscountValue(target.discount_value ?? 0); setNotes(target.notes ?? '')
+        setItems(existingItems.length > 0 ? existingItems.map(it => ({ id: it.id, description: it.description, quantity: it.quantity, unit_price: it.unit_price, total: it.total })) : [emptyLine()])
+        setShowModal(true)
+      }
+    } else if (state?.fromJob) {
+      const j = state.fromJob
+      let num = ''
+      try { num = await getNextInvoiceNumber() } catch { num = `INV-${new Date().getFullYear()}-001` }
+      setEditing(null); setNumber(num); setCustomerId(j.customer_id ?? ''); setCustomerName(j.customer_name ?? '')
+      setCustomerAddress(''); setStatus('draft'); setIssueDate(new Date().toISOString().slice(0, 10))
+      setDueDate(''); setDocType('invoice'); setTaxRate(24); setDiscountType(null); setDiscountValue(0)
+      setNotes(j.notes ?? '')
+      setItems(j.description?.trim() ? [{ id: uuid(), description: j.description.trim(), quantity: 1, unit_price: 0, total: 0 }] : [emptyLine()])
+      setShowModal(true)
+    } else if (state?.fromOffer) {
+      const o = state.fromOffer
+      let num = ''
+      try { num = await getNextInvoiceNumber() } catch { num = `INV-${new Date().getFullYear()}-001` }
+      setEditing(null); setNumber(num); setCustomerId(o.customer_id ?? ''); setCustomerName(o.customer_name ?? '')
+      setCustomerAddress(o.customer_address ?? ''); setStatus('draft'); setIssueDate(new Date().toISOString().slice(0, 10))
+      setDueDate(''); setDocType('invoice'); setTaxRate(24); setDiscountType(null); setDiscountValue(0)
+      setNotes('')
+      const offerItems = await getOfferItems(o.offer_id)
+      setItems(offerItems.length > 0
+        ? offerItems.map(it => ({ id: uuid(), description: it.description, quantity: it.quantity, unit_price: it.unit_price, total: it.total }))
+        : [emptyLine()])
+      setShowModal(true)
+    }
   }
 
-  useEffect(() => { load() }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [location.key])
 
-  const filtered = filter === 'all' ? invoices : invoices.filter(i => i.status === filter)
+  const currentYear = new Date().getFullYear()
+  const hasPrevYears = invoices.some(i => i.issue_date && new Date(i.issue_date).getFullYear() < currentYear)
+  const yearFiltered = yearFilter === 'prev'
+    ? invoices.filter(i => !i.issue_date || new Date(i.issue_date).getFullYear() < currentYear)
+    : invoices.filter(i => !i.issue_date || new Date(i.issue_date).getFullYear() === yearFilter)
+  const filtered = filter === 'all' ? yearFiltered : yearFiltered.filter(i => i.status === filter)
   const counts = {
-    all: invoices.length,
-    draft: invoices.filter(i => i.status === 'draft').length,
-    sent: invoices.filter(i => i.status === 'sent').length,
-    paid: invoices.filter(i => i.status === 'paid').length,
+    all: yearFiltered.length,
+    draft: yearFiltered.filter(i => i.status === 'draft').length,
+    pending: yearFiltered.filter(i => i.status === 'pending').length,
+    paid: yearFiltered.filter(i => i.status === 'paid').length,
   }
+
+  const filteredNet = filtered.reduce((s, i) => s + (i.subtotal ?? 0), 0)
+  const filteredVat = filtered.reduce((s, i) => s + ((i.total ?? 0) - (i.subtotal ?? 0)), 0)
+  const filteredTotal = filtered.reduce((s, i) => s + (i.total ?? 0), 0)
 
   const subtotal = items.reduce((s, it) => s + it.total, 0)
   const discountAmount = discountType === 'percent'
@@ -326,22 +388,61 @@ export default function Invoices() {
     await load()
   }
 
+  const getCustomerVat = (inv: Invoice) =>
+    customers.find(c => c.id === inv.customer_id)?.vat_number ?? undefined
+
   const handlePrint = async (inv: Invoice) => {
-    try {
-      alert('handlePrint called')
-      const invItems = await getInvoiceItems(inv.id)
-      await printInvoice(inv, invItems, settings)
-    } catch (e) {
-      alert('Print error: ' + e)
-    }
+    const invItems = await getInvoiceItems(inv.id)
+    await printInvoice(inv, invItems, settings, getCustomerVat(inv))
+  }
+
+  const handleSavePdf = async (inv: Invoice) => {
+    const invItems = await getInvoiceItems(inv.id)
+    const html = buildInvoiceHtml(inv, invItems, settings, getCustomerVat(inv))
+    const name = `${inv.number}${inv.customer_name ? '-' + inv.customer_name : ''}`
+    await ipc.savePdf(html, name)
+  }
+
+  const handleShareMessenger = async (inv: Invoice, messenger: 'whatsapp' | 'viber') => {
+    const invItems = await getInvoiceItems(inv.id)
+    const html = buildInvoiceHtml(inv, invItems, settings, getCustomerVat(inv))
+    const filename = `${inv.number}${inv.customer_name ? '-' + inv.customer_name : ''}`
+    const filePath = await ipc.saveDesktopPdf(html, filename)
+    const scheme = messenger === 'whatsapp' ? 'whatsapp://send' : 'viber://forward'
+    await ipc.openExternal(scheme)
+    const pdfName = filePath.split('\\').pop() ?? filename
+    setTimeout(() => alert(`Το PDF αποθηκεύτηκε στην Επιφάνεια Εργασίας:\n${pdfName}\n\nΣύρε το αρχείο στο παράθυρο του ${messenger === 'whatsapp' ? 'WhatsApp' : 'Viber'}.`), 800)
   }
 
   const statusColor = (s: Invoice['status']) =>
-    s === 'paid' ? 'bg-emerald-500/20 text-emerald-400' :
-    s === 'sent' ? 'bg-blue-500/20 text-blue-400' :
+    s === 'paid'    ? 'bg-emerald-500/20 text-emerald-400' :
+    s === 'pending' ? 'bg-blue-500/20 text-blue-400' :
     'bg-gray-500/20 text-gray-400'
 
-  const filters: FilterType[] = ['all', 'draft', 'sent', 'paid']
+  const handleMydataSubmit = async (inv: Invoice, e: React.MouseEvent) => {
+    e.stopPropagation()
+    const isInvoice = inv.document_type !== 'receipt'
+    const customer = customers.find(c => c.id === inv.customer_id)
+    const hasVat = !!(customer?.vat_number?.trim())
+    const docLabel = isInvoice ? t('invoices.docInvoice') : t('invoices.docReceipt')
+
+    let message = t('invoices.mydataConfirm', { doc: docLabel, number: inv.number })
+    if (isInvoice && !hasVat) {
+      message = t('invoices.mydataConfirmNoVat')
+    }
+
+    const confirmed = window.confirm(message)
+    if (!confirmed) return
+    await ipc.db.run(
+      `UPDATE invoices SET mydata_status = 'pending', updated_at = datetime('now') WHERE id = ?`,
+      [inv.id]
+    )
+    const invItems = await getInvoiceItems(inv.id)
+    await submitInvoiceToMydata(inv, invItems)
+    await load()
+  }
+
+  const filters: FilterType[] = ['all', 'draft', 'pending', 'paid']
 
   return (
     <div className="p-6 h-full overflow-auto">
@@ -359,6 +460,24 @@ export default function Invoices() {
         </button>
       </div>
 
+      {/* Year toggle */}
+      {hasPrevYears && (
+        <div className="flex gap-2 mb-3">
+          <button
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${yearFilter !== 'prev' ? 'bg-brand-500 text-white' : 'bg-surface-800 text-gray-400 hover:text-white'}`}
+            onClick={() => setYearFilter(currentYear)}
+          >
+            {currentYear}
+          </button>
+          <button
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${yearFilter === 'prev' ? 'bg-surface-600 text-white' : 'bg-surface-800 text-gray-400 hover:text-white'}`}
+            onClick={() => setYearFilter('prev')}
+          >
+            {t('invoices.previousYears')}
+          </button>
+        </div>
+      )}
+
       {/* Filter tabs */}
       <div className="flex gap-1 mb-4 bg-surface-800 rounded-lg p-1 w-fit">
         {filters.map(f => (
@@ -373,6 +492,40 @@ export default function Invoices() {
           </button>
         ))}
       </div>
+
+      {/* Totals summary */}
+      {filtered.length > 0 && (
+        <div className="mb-4">
+          <button
+            className="flex items-center gap-2 text-xs text-gray-500 hover:text-gray-300 transition-colors mb-2"
+            onClick={() => setShowTotals(p => !p)}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              {showTotals
+                ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" />
+                : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              }
+            </svg>
+            {showTotals ? t('invoices.hideAmounts') : t('invoices.showAmounts')}
+          </button>
+          {showTotals && (
+            <div className="flex gap-3">
+              <div className="flex-1 bg-surface-800 border border-surface-600 rounded-xl px-4 py-3">
+                <p className="text-xs text-gray-500 mb-0.5">{t('invoices.netValue')}</p>
+                <p className="text-lg font-semibold text-white">{filteredNet.toFixed(2)} €</p>
+              </div>
+              <div className="flex-1 bg-surface-800 border border-surface-600 rounded-xl px-4 py-3">
+                <p className="text-xs text-gray-500 mb-0.5">{t('invoices.vat')}</p>
+                <p className="text-lg font-semibold text-yellow-400">{filteredVat.toFixed(2)} €</p>
+              </div>
+              <div className="flex-1 bg-surface-800 border border-brand-500/40 rounded-xl px-4 py-3">
+                <p className="text-xs text-gray-500 mb-0.5">{t('invoices.total')}</p>
+                <p className="text-lg font-semibold text-brand-400">{filteredTotal.toFixed(2)} €</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Invoice list */}
       {filtered.length === 0 ? (
@@ -393,11 +546,32 @@ export default function Invoices() {
             >
               <div className="w-1 self-stretch rounded-full bg-brand-500/40" />
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="font-semibold text-sm">{inv.number}</span>
                   <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusColor(inv.status)}`}>
                     {t(`invoices.status_${inv.status}`)}
                   </span>
+                  {inv.mydata_status === 'submitted' && (
+                    <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-500/20 text-emerald-400">
+                      myDATA ✓
+                    </span>
+                  )}
+                  {inv.mydata_status === 'failed' && (
+                    <span className="flex items-center gap-1">
+                      <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-500/20 text-red-400">
+                        myDATA ✗
+                      </span>
+                      <button
+                        className="text-gray-500 hover:text-yellow-400 p-0.5 rounded transition-colors"
+                        onClick={e => handleMydataSubmit(inv, e)}
+                        title="Retry myDATA submission"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                      </button>
+                    </span>
+                  )}
                 </div>
                 <p className="text-gray-400 text-sm truncate mt-0.5">{inv.customer_name ?? '—'}</p>
               </div>
@@ -406,6 +580,7 @@ export default function Invoices() {
                 <p className="text-gray-500 text-xs mt-0.5">{inv.issue_date ?? '—'}</p>
               </div>
               <div className="flex gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+                {/* Print */}
                 <button
                   className="text-gray-500 hover:text-white p-1.5 rounded-lg hover:bg-surface-700 transition-colors"
                   onClick={() => handlePrint(inv)}
@@ -415,6 +590,52 @@ export default function Invoices() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
                   </svg>
                 </button>
+                {/* Save as PDF */}
+                <button
+                  className="text-gray-500 hover:text-white p-1.5 rounded-lg hover:bg-surface-700 transition-colors"
+                  onClick={() => handleSavePdf(inv)}
+                  title={t('invoices.savePdf')}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  </svg>
+                </button>
+                {/* WhatsApp */}
+                <button
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
+                  onClick={() => handleShareMessenger(inv, 'whatsapp')}
+                  title="Κοινοποίηση στο WhatsApp"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                    <path d="M11.992 2C6.476 2 2 6.476 2 11.992c0 1.814.487 3.516 1.338 4.983L2 22l5.166-1.315A9.96 9.96 0 0011.992 22c5.516 0 9.992-4.476 9.992-9.992C21.984 6.476 17.508 2 11.992 2zm0 18.316a8.292 8.292 0 01-4.221-1.153l-.303-.18-3.067.781.813-2.981-.198-.314A8.324 8.324 0 013.684 11.992c0-4.585 3.731-8.316 8.308-8.316 4.585 0 8.316 3.731 8.316 8.316 0 4.577-3.731 8.324-8.316 8.324z"/>
+                  </svg>
+                  WA
+                </button>
+                {/* Viber */}
+                <button
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 transition-colors"
+                  onClick={() => handleShareMessenger(inv, 'viber')}
+                  title="Κοινοποίηση στο Viber"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M11.992 2C6.476 2 2 6.476 2 11.992c0 2.172.693 4.18 1.864 5.822L2.5 21.5l3.794-1.328A9.956 9.956 0 0011.992 22c5.516 0 9.992-4.476 9.992-9.992C21.984 6.476 17.508 2 11.992 2zm4.9 13.9c-.21.588-.942 1.176-1.596 1.26-.42.042-.966.084-3.108-.672-2.604-.966-4.284-3.612-4.41-3.78-.126-.168-1.05-1.386-1.05-2.646 0-1.26.672-1.89 1.008-2.142.336-.252.714-.336.966-.336.252 0 .462 0 .672.042.21.042.504-.084.798.588.294.672 1.008 2.31 1.092 2.478.084.168.126.378 0 .588-.126.21-.168.336-.336.504-.168.168-.336.378-.462.504-.168.168-.336.378-.168.714.168.336.756 1.26 1.638 2.058 1.134 1.008 2.1 1.344 2.394 1.47.294.126.462.084.63-.084.168-.168.714-.84.882-1.134.168-.294.378-.252.63-.168.252.084 1.638.798 1.932.966.294.168.504.252.588.378.084.168.084.672-.126 1.26z"/>
+                  </svg>
+                  Viber
+                </button>
+                {/* Submit to myDATA — all tiers */}
+                {inv.mydata_status !== 'submitted' && (
+                  <button
+                    className="text-gray-500 hover:text-emerald-400 p-1.5 rounded-lg hover:bg-surface-700 transition-colors"
+                    onClick={e => handleMydataSubmit(inv, e)}
+                    title="Υποβολή myDATA"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </button>
+                )}
+                {/* Delete */}
                 <button
                   className="text-gray-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-surface-700 transition-colors"
                   onClick={() => setDeleteConfirm(inv.id)}
@@ -456,6 +677,45 @@ export default function Invoices() {
             </div>
 
             <div className="p-5 space-y-4">
+              {/* myDATA status banner */}
+              {editing && editing.mydata_mark && (
+                <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-2.5">
+                  <svg className="w-4 h-4 text-emerald-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm font-medium text-emerald-300">ΜΑΡΚ myDATA: <span className="font-mono font-bold">{editing.mydata_mark}</span></span>
+                </div>
+              )}
+              {editing && editing.mydata_status === 'failed' && (
+                <div className="flex items-center justify-between gap-3 bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-2.5">
+                  <div className="flex items-center gap-3">
+                    <svg className="w-4 h-4 text-red-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-sm text-red-300">Η υποβολή στο myDATA απέτυχε.</span>
+                      {editing.mydata_error && (
+                        <span className="text-xs text-red-400/80 font-mono break-all">{editing.mydata_error}</span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    className="text-xs bg-red-500/20 hover:bg-red-500/40 text-red-300 rounded px-3 py-1 transition-colors whitespace-nowrap"
+                    onClick={async () => {
+                      await ipc.db.run(
+                        `UPDATE invoices SET mydata_status = 'pending', updated_at = datetime('now') WHERE id = ?`,
+                        [editing.id]
+                      )
+                      const invItems = await getInvoiceItems(editing.id)
+                      await upsertInvoice({ ...editing, mydata_status: 'pending' }, invItems)
+                      await load()
+                      closeModal()
+                    }}
+                  >
+                    {t('invoices.retryMydata')}
+                  </button>
+                </div>
+              )}
               {/* Row 1: number + status */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -466,7 +726,7 @@ export default function Invoices() {
                   <label className="block text-xs text-gray-400 mb-1">{t('invoices.status')}</label>
                   <select className="input w-full" value={status} onChange={e => setStatus(e.target.value as Invoice['status'])}>
                     <option value="draft">{t('invoices.status_draft')}</option>
-                    <option value="sent">{t('invoices.status_sent')}</option>
+                    <option value="pending">{t('invoices.status_pending')}</option>
                     <option value="paid">{t('invoices.status_paid')}</option>
                   </select>
                 </div>
@@ -531,9 +791,16 @@ export default function Invoices() {
               <div>
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-xs text-gray-400 uppercase tracking-wider">{t('invoices.items')}</label>
-                  <button className="text-xs text-brand-400 hover:text-brand-300" onClick={() => setItems(p => [...p, emptyLine()])}>
-                    + {t('invoices.addItem')}
-                  </button>
+                  <div className="flex items-center gap-3">
+                    {catalog.length > 0 && (
+                      <button className="text-xs text-indigo-400 hover:text-indigo-300" onClick={() => { setCatalogSearch(''); setShowCatalog(true) }}>
+                        📦 {t('invoices.fromCatalog')}
+                      </button>
+                    )}
+                    <button className="text-xs text-brand-400 hover:text-brand-300" onClick={() => setItems(p => [...p, emptyLine()])}>
+                      + {t('invoices.addItem')}
+                    </button>
+                  </div>
                 </div>
                 <div className="border border-surface-600 rounded-lg overflow-hidden">
                   <table className="w-full text-sm">
@@ -679,6 +946,58 @@ export default function Invoices() {
                   {saving ? t('invoices.saving') : docType === 'receipt' ? t('invoices.saveReceipt') : t('invoices.save')}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Catalog picker */}
+      {showCatalog && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
+          <div className="bg-surface-800 border border-surface-600 rounded-2xl w-full max-w-md max-h-[70vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-surface-600">
+              <h3 className="font-semibold">{t('invoices.selectFromCatalog')}</h3>
+              <button className="text-gray-400 hover:text-white" onClick={() => setShowCatalog(false)}>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="p-3 border-b border-surface-600">
+              <input
+                className="input w-full text-sm"
+                placeholder={t('invoices.catalogSearch')}
+                value={catalogSearch}
+                onChange={e => setCatalogSearch(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="overflow-auto flex-1">
+              {catalog
+                .filter(it => catalogSearch === '' || it.name.toLowerCase().includes(catalogSearch.toLowerCase()) || (it.code ?? '').toLowerCase().includes(catalogSearch.toLowerCase()))
+                .map(it => (
+                  <button
+                    key={it.id}
+                    className="w-full text-left px-4 py-3 hover:bg-surface-700 border-b border-surface-700 transition-colors flex items-center justify-between"
+                    onClick={() => {
+                      const newItem = { id: uuid(), description: it.name, quantity: 1, unit_price: it.price, total: it.price }
+                      setItems(p => {
+                        const isOnlyEmptyLine = p.length === 1 && !p[0].description && p[0].unit_price === 0
+                        return isOnlyEmptyLine ? [newItem] : [...p, newItem]
+                      })
+                      setShowCatalog(false)
+                    }}
+                  >
+                    <div>
+                      <span className="text-sm font-medium">{it.name}</span>
+                      {it.code && <span className="ml-2 text-xs text-gray-500 font-mono">{it.code}</span>}
+                    </div>
+                    <div className="text-right shrink-0 ml-4">
+                      <span className="text-sm font-semibold">{it.price.toFixed(2)} €</span>
+                      <span className="text-xs text-gray-500 ml-1">/{it.unit}</span>
+                    </div>
+                  </button>
+                ))}
             </div>
           </div>
         </div>

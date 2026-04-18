@@ -22,13 +22,12 @@ export default function Onboarding({ onComplete }: Props) {
   const [phone, setPhone]                 = useState('')
   const [workType, setWorkType]           = useState('')
   const [selectedCats, setSelectedCats]   = useState<string[]>(DEFAULT_CATEGORIES.map(c => c.name_en))
-  const [vapiKey, setVapiKey]             = useState('')
   const [aiProvider, setAiProvider]       = useState<'claude' | 'ollama'>('claude')
   const [claudeKey, setClaudeKey]         = useState('')
   const [ollamaUrl, setOllamaUrl]         = useState('http://localhost:11434')
   const [saving, setSaving]               = useState(false)
 
-  const TOTAL_STEPS = 5
+  const TOTAL_STEPS = 4
 
   const workTypes = [
     { key: 'heating',      label: t('onboarding.heating') },
@@ -48,7 +47,6 @@ export default function Onboarding({ onComplete }: Props) {
     setSaving(true)
 
     // Save API keys to keychain
-    await saveToKeychain('vapi_api_key', vapiKey)
     await saveToKeychain('claude_api_key', claudeKey)
     if (aiProvider === 'ollama') await saveToKeychain('ollama_url', ollamaUrl)
 
@@ -106,8 +104,11 @@ export default function Onboarding({ onComplete }: Props) {
                   <input className="input" value={phone} onChange={e => setPhone(e.target.value)} placeholder="+306971981206" />
                 </div>
               </div>
-              <button className="btn-primary w-full mt-6 justify-center" onClick={() => setStep(2)} disabled={!name}>
+              <button className="btn-primary w-full mt-4 justify-center" onClick={() => setStep(2)} disabled={!name}>
                 {t('onboarding.continue')}
+              </button>
+              <button className="btn-ghost w-full mt-2 justify-center text-sm text-gray-500" onClick={finish}>
+                {t('onboarding.skip')}
               </button>
             </>
           )}
@@ -170,44 +171,8 @@ export default function Onboarding({ onComplete }: Props) {
             </>
           )}
 
-          {/* Step 4 — Connect VAPI */}
+          {/* Step 4 — Choose AI */}
           {step === 4 && (
-            <>
-              <div className="flex items-center gap-3 mb-1">
-                <div className="w-8 h-8 bg-brand-500/20 rounded-lg flex items-center justify-center">
-                  <svg className="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 8V5z" />
-                  </svg>
-                </div>
-                <h2 className="text-xl font-semibold">Connect VAPI</h2>
-              </div>
-              <p className="text-gray-400 text-sm mb-6">
-                VAPI is your AI phone assistant. It answers calls, looks up customers, and logs everything automatically.
-              </p>
-              <div>
-                <label className="label">VAPI API Key</label>
-                <input
-                  className="input font-mono text-sm"
-                  type="password"
-                  value={vapiKey}
-                  onChange={e => setVapiKey(e.target.value)}
-                  placeholder="vapi_..."
-                />
-              </div>
-              <div className="flex gap-3 mt-6">
-                <button className="btn-ghost flex-1 justify-center" onClick={() => setStep(3)}>{t('onboarding.back')}</button>
-                <button className="btn-ghost flex-1 justify-center text-gray-400" onClick={() => setStep(5)}>
-                  Skip for now
-                </button>
-                <button className="btn-primary flex-1 justify-center" onClick={() => setStep(5)} disabled={!vapiKey}>
-                  {t('onboarding.continue')}
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* Step 5 — Choose AI */}
-          {step === 5 && (
             <>
               <div className="flex items-center gap-3 mb-1">
                 <div className="w-8 h-8 bg-brand-500/20 rounded-lg flex items-center justify-center">
@@ -215,11 +180,9 @@ export default function Onboarding({ onComplete }: Props) {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                   </svg>
                 </div>
-                <h2 className="text-xl font-semibold">Choose AI</h2>
+                <h2 className="text-xl font-semibold">{t('onboarding.step5Title')}</h2>
               </div>
-              <p className="text-gray-400 text-sm mb-6">
-                Pick your AI assistant. Claude is cloud-based and more capable. Ollama runs locally on your machine.
-              </p>
+              <p className="text-gray-400 text-sm mb-6">{t('onboarding.step5Sub')}</p>
 
               {/* Provider cards */}
               <div className="grid grid-cols-2 gap-3 mb-4">
@@ -235,7 +198,7 @@ export default function Onboarding({ onComplete }: Props) {
                   >
                     <div className="font-semibold text-sm text-white capitalize">{p === 'claude' ? 'Claude' : 'Ollama'}</div>
                     <div className="text-xs text-gray-400 mt-1">
-                      {p === 'claude' ? 'Cloud · Most capable' : 'Local · Private'}
+                      {p === 'claude' ? t('onboarding.claudeDesc') : t('onboarding.ollamaDesc')}
                     </div>
                   </button>
                 ))}
@@ -243,7 +206,7 @@ export default function Onboarding({ onComplete }: Props) {
 
               {aiProvider === 'claude' && (
                 <div>
-                  <label className="label">Claude API Key</label>
+                  <label className="label">{t('onboarding.claudeKey')}</label>
                   <input
                     className="input font-mono text-sm"
                     type="password"
@@ -256,7 +219,7 @@ export default function Onboarding({ onComplete }: Props) {
 
               {aiProvider === 'ollama' && (
                 <div>
-                  <label className="label">Ollama URL</label>
+                  <label className="label">{t('onboarding.ollamaUrl')}</label>
                   <input
                     className="input font-mono text-sm"
                     value={ollamaUrl}
@@ -267,7 +230,7 @@ export default function Onboarding({ onComplete }: Props) {
               )}
 
               <div className="flex gap-3 mt-6">
-                <button className="btn-ghost flex-1 justify-center" onClick={() => setStep(4)}>{t('onboarding.back')}</button>
+                <button className="btn-ghost flex-1 justify-center" onClick={() => setStep(3)}>{t('onboarding.back')}</button>
                 <button
                   className="btn-primary flex-1 justify-center"
                   onClick={finish}

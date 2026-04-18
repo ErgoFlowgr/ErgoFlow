@@ -1,13 +1,14 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { getCustomers, upsertCustomer, deleteCustomer, getCallsByCustomer, type Customer, type Call, uuid } from '../../lib/db'
+import { getCustomers, upsertCustomer, deleteCustomer, deleteCustomers, getCallsByCustomer, type Customer, type Call, uuid } from '../../lib/db'
 
 const INPUT = 'w-full bg-surface-700 border border-surface-600 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-brand-500'
 const LABEL = 'block text-xs text-gray-400 mb-1'
 
 interface EditState {
   id?: string
+  display_name: string
   company_name: string
   coc_number: string
   vat_number: string
@@ -26,6 +27,7 @@ interface EditState {
 }
 
 const EMPTY_EDIT: EditState = {
+  display_name: '',
   company_name: '', coc_number: '', vat_number: '',
   salutation: '', first_name: '', last_name: '',
   email: '', phone: '', mobile: '', fax: '',
@@ -36,6 +38,7 @@ const EMPTY_EDIT: EditState = {
 function customerToEdit(c: Customer): EditState {
   return {
     id: c.id,
+    display_name: c.name ?? '',
     company_name: c.company_name ?? '',
     coc_number: c.coc_number ?? '',
     vat_number: c.vat_number ?? '',
@@ -64,6 +67,13 @@ export default function Customers() {
   const [selected, setSelected] = useState<Customer | null>(null)
   const [customerCalls, setCustomerCalls] = useState<Call[]>([])
   const [saving, setSaving] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [csvPreview, setCsvPreview] = useState<Partial<Customer>[] | null>(null)
+  const [csvImporting, setCsvImporting] = useState(false)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; customer: Customer } | null>(null)
 
   const load = useCallback(async () => {
     setCustomers(await getCustomers(search || undefined))
@@ -76,8 +86,25 @@ export default function Customers() {
     getCallsByCustomer(c.id).then(setCustomerCalls)
   }
 
-  const openNew = () => { setEditing({ ...EMPTY_EDIT }); setShowModal(true) }
-  const openEdit = (c: Customer) => { setEditing(customerToEdit(c)); setShowModal(true) }
+  const [savedEditing, setSavedEditing] = useState<EditState | null>(null)
+
+  const isFormDirty = (): boolean => {
+    if (!editing || !savedEditing) return false
+    return (Object.keys(editing) as (keyof EditState)[]).some(k => editing[k] !== savedEditing[k])
+  }
+
+  const closeModal = () => {
+    if (isFormDirty()) {
+      const ok = window.confirm('Έχετε αποθηκεύσει τις αλλαγές; Αν κλείσετε θα χαθούν.')
+      if (!ok) return
+    }
+    setShowModal(false)
+    setEditing(null)
+    setSavedEditing(null)
+  }
+
+  const openNew = () => { const s = { ...EMPTY_EDIT }; setEditing(s); setSavedEditing(s); setShowModal(true) }
+  const openEdit = (c: Customer) => { const s = customerToEdit(c); setEditing(s); setSavedEditing(s); setShowModal(true) }
 
   const field = (key: keyof EditState) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setEditing(p => p ? { ...p, [key]: e.target.value } : p)
@@ -85,6 +112,7 @@ export default function Customers() {
   const save = async () => {
     if (!editing) return
     const displayName =
+      editing.display_name.trim() ||
       editing.company_name.trim() ||
       [editing.first_name, editing.last_name].filter(Boolean).join(' ').trim() ||
       t('customers.unnamed')
@@ -111,13 +139,124 @@ export default function Customers() {
     setSaving(false)
     setShowModal(false)
     setEditing(null)
+    setSavedEditing(null)
     load()
   }
 
   const del = async (id: string) => {
-    if (!confirm(t('common.confirm') + '?')) return
+    if (confirmDelete !== id) { setConfirmDelete(id); return }
+    setConfirmDelete(null)
     await deleteCustomer(id)
     setSelected(null)
+    load()
+  }
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === customers.length) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(customers.map(c => c.id)))
+    }
+  }
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+    setConfirmBulkDelete(false)
+  }
+
+  const bulkDelete = async () => {
+    if (!confirmBulkDelete) { setConfirmBulkDelete(true); return }
+    await deleteCustomers(Array.from(selectedIds))
+    setSelected(null)
+    exitSelectMode()
+    load()
+  }
+
+  const parseCsv = (text: string): Partial<Customer>[] => {
+    // Detect delimiter (comma or semicolon)
+    const delim = text.indexOf(';') !== -1 && text.indexOf(',') === -1 ? ';' : ','
+    const lines = text.split(/\r?\n/).filter(l => l.trim())
+    if (lines.length < 2) return []
+
+    // Parse a single CSV line respecting quoted fields
+    const parseLine = (line: string): string[] => {
+      const fields: string[] = []
+      let cur = '', inQ = false
+      for (let i = 0; i < line.length; i++) {
+        if (line[i] === '"') { inQ = !inQ }
+        else if (line[i] === delim && !inQ) { fields.push(cur.trim()); cur = '' }
+        else cur += line[i]
+      }
+      fields.push(cur.trim())
+      return fields
+    }
+
+    const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zα-ω0-9]/g, '')
+    const headers = parseLine(lines[0]).map(norm)
+
+    // Map header to Customer field
+    const map = (h: string): keyof Customer | null => {
+      if (/name|fullname|displayname|ονοματ|πελατ/.test(h)) return 'name'
+      if (/firstname|first/.test(h)) return 'first_name'
+      if (/lastname|last|επωνυμ/.test(h)) return 'last_name'
+      if (/company|εταιρ/.test(h)) return 'company_name'
+      if (/^(phone|telephone|τηλεφ|τηλ)$/.test(h)) return 'phone'
+      if (/mobile|cell|κινητ/.test(h)) return 'mobile'
+      if (/email|mail/.test(h)) return 'email'
+      if (/address|διευθ/.test(h)) return 'address'
+      if (/^city$|πολ/.test(h)) return 'city'
+      if (/postal|zip|^τκ$/.test(h)) return 'postal_code'
+      if (/^vat$|^afm$|^αφμ$/.test(h)) return 'vat_number'
+      if (/notes|σημειω/.test(h)) return 'notes'
+      return null
+    }
+
+    const mappings = headers.map(map)
+
+    return lines.slice(1).map(line => {
+      const vals = parseLine(line)
+      const row: Partial<Customer> = { id: uuid() }
+      mappings.forEach((field, i) => {
+        if (field && vals[i]) (row as Record<string, unknown>)[field] = vals[i]
+      })
+      // Build display name if not present
+      if (!row.name) {
+        row.name = [row.first_name, row.last_name].filter(Boolean).join(' ') ||
+          row.company_name || row.phone || row.email || t('customers.unnamed')
+      }
+      return row
+    }).filter(r => r.name && r.name !== t('customers.unnamed'))
+  }
+
+  const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const text = ev.target?.result as string
+      const rows = parseCsv(text)
+      if (!rows.length) { alert('Δεν βρέθηκαν επαφές στο αρχείο.'); return }
+      setCsvPreview(rows)
+    }
+    reader.readAsText(file, 'UTF-8')
+    e.target.value = '' // reset so same file can be picked again
+  }
+
+  const importCsv = async () => {
+    if (!csvPreview) return
+    setCsvImporting(true)
+    for (const c of csvPreview) await upsertCustomer(c as Customer)
+    setCsvImporting(false)
+    setCsvPreview(null)
     load()
   }
 
@@ -126,15 +265,63 @@ export default function Customers() {
       <div className="flex-1 p-6 overflow-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold">{t('customers.title')}</h1>
-          <button
-            className="flex items-center gap-2 px-3 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg transition-colors"
-            onClick={openNew}
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-            </svg>
-            {t('customers.add')}
-          </button>
+          <div className="flex gap-2">
+            {selectMode ? (
+              <>
+                <button
+                  onClick={toggleSelectAll}
+                  className="flex items-center gap-2 px-3 py-2 bg-surface-700 hover:bg-surface-600 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+                >
+                  {selectedIds.size === customers.length ? 'Deselect All' : 'Select All'}
+                </button>
+                {selectedIds.size > 0 && (
+                  <button
+                    onClick={bulkDelete}
+                    className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-colors ${confirmBulkDelete ? 'bg-red-500 text-white' : 'bg-red-500/10 hover:bg-red-500/20 text-red-400'}`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    {confirmBulkDelete ? `Sure? Delete ${selectedIds.size}` : `Delete (${selectedIds.size})`}
+                  </button>
+                )}
+                <button
+                  onClick={exitSelectMode}
+                  className="flex items-center gap-2 px-3 py-2 bg-surface-700 hover:bg-surface-600 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+              </>
+            ) : (
+              <>
+                <label className="flex items-center gap-2 px-3 py-2 bg-surface-700 hover:bg-surface-600 text-gray-300 text-sm font-medium rounded-lg transition-colors cursor-pointer">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  Import CSV
+                  <input type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
+                </label>
+                {customers.length > 0 && (
+                  <button
+                    onClick={() => setSelectMode(true)}
+                    className="flex items-center gap-2 px-3 py-2 bg-surface-700 hover:bg-surface-600 text-gray-300 text-sm font-medium rounded-lg transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Select
+                  </button>
+                )}
+                <button
+                  className="flex items-center gap-2 px-3 py-2 bg-brand-500 hover:bg-brand-600 text-white text-sm font-medium rounded-lg transition-colors"
+                  onClick={openNew}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                  </svg>
+                  {t('customers.add')}
+                </button>
+              </>
+            )}
+          </div>
         </div>
 
         {/* Search */}
@@ -157,31 +344,47 @@ export default function Customers() {
           </div>
         ) : (
           <div className="grid gap-3">
-            {customers.map(c => (
-              <div
-                key={c.id}
-                onClick={() => selectCustomer(c)}
-                className={`bg-surface-800 border border-surface-600 rounded-xl p-4 cursor-pointer flex items-center gap-4 hover:border-brand-500/50 transition-colors ${selected?.id === c.id ? 'border-brand-500' : ''}`}
-              >
-                <div className="w-10 h-10 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold shrink-0">
-                  {c.name[0]?.toUpperCase() ?? '?'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{c.name}</p>
-                  <p className="text-sm text-gray-400 truncate">
-                    {[c.company_name && c.company_name !== c.name ? c.company_name : null, c.phone ?? c.email].filter(Boolean).join(' · ') || '—'}
-                  </p>
-                </div>
-                <button
-                  onClick={e => { e.stopPropagation(); openEdit(c) }}
-                  className="p-1.5 text-gray-500 hover:text-white hover:bg-surface-600 rounded-lg transition-colors shrink-0"
+            {customers.map(c => {
+              const isChecked = selectedIds.has(c.id)
+              return (
+                <div
+                  key={c.id}
+                  onClick={() => selectMode ? toggleSelect(c.id) : selectCustomer(c)}
+                  onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, customer: c }) }}
+                  className={`bg-surface-800 border rounded-xl p-4 cursor-pointer flex items-center gap-4 transition-colors ${
+                    selectMode
+                      ? isChecked ? 'border-brand-500 bg-brand-500/5' : 'border-surface-600 hover:border-surface-500'
+                      : selected?.id === c.id ? 'border-brand-500' : 'border-surface-600 hover:border-brand-500/50'
+                  }`}
                 >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                  </svg>
-                </button>
-              </div>
-            ))}
+                  {selectMode ? (
+                    <div className={`w-5 h-5 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${isChecked ? 'bg-brand-500 border-brand-500' : 'border-surface-400'}`}>
+                      {isChecked && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                    </div>
+                  ) : (
+                    <div className="w-10 h-10 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold shrink-0">
+                      {c.name[0]?.toUpperCase() ?? '?'}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{c.name}</p>
+                    <p className="text-sm text-gray-400 truncate">
+                      {[c.company_name && c.company_name !== c.name ? c.company_name : null, c.phone ?? c.email].filter(Boolean).join(' · ') || '—'}
+                    </p>
+                  </div>
+                  {!selectMode && (
+                    <button
+                      onClick={e => { e.stopPropagation(); openEdit(c) }}
+                      className="p-1.5 text-gray-500 hover:text-white hover:bg-surface-600 rounded-lg transition-colors shrink-0"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -309,10 +512,11 @@ export default function Customers() {
               ✏️ Edit
             </button>
             <button
-              className="px-3 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 rounded-lg transition-colors"
+              className={`px-3 py-2 rounded-lg transition-colors text-sm font-medium ${confirmDelete === selected.id ? 'bg-red-500 text-white' : 'bg-red-500/10 hover:bg-red-500/20 text-red-400'}`}
               onClick={() => del(selected.id)}
+              onBlur={() => setConfirmDelete(null)}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+              {confirmDelete === selected.id ? 'Sure?' : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>}
             </button>
           </div>
         </div>
@@ -320,14 +524,14 @@ export default function Customers() {
 
       {/* Modal */}
       {showModal && editing !== null && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setShowModal(false)}>
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={closeModal}>
           <div className="bg-surface-800 rounded-2xl w-full max-w-3xl shadow-2xl" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-surface-600">
               <h2 className="text-base font-semibold text-white">
                 {editing.id ? t('customers.editContact') : t('customers.newContact')}
               </h2>
-              <button onClick={() => setShowModal(false)} className="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
+              <button onClick={closeModal} className="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
             </div>
 
             {/* Two-column form */}
@@ -337,6 +541,10 @@ export default function Customers() {
               <div>
                 <h3 className="text-sm font-semibold text-white mb-4">{t('customers.clientDetails')}</h3>
                 <div className="space-y-3">
+                  <div>
+                    <label className={LABEL}>Name *</label>
+                    <input className={INPUT} value={editing.display_name} onChange={field('display_name')} placeholder="Customer name" />
+                  </div>
                   <div>
                     <label className={LABEL}>{t('customers.companyName')}</label>
                     <input className={INPUT} value={editing.company_name} onChange={field('company_name')} />
@@ -358,9 +566,9 @@ export default function Customers() {
                         onChange={field('salutation')}
                       >
                         <option value="">—</option>
-                        <option value="Sir">Sir</option>
-                        <option value="Madam">Madam</option>
-                        <option value="Dr">Dr</option>
+                        <option value="Κος">Κος</option>
+                        <option value="Κα">Κα</option>
+                        <option value="Δρ">Δρ</option>
                       </select>
                       <input className={INPUT} placeholder={t('customers.firstName')} value={editing.first_name} onChange={field('first_name')} />
                       <input className={INPUT} placeholder={t('customers.lastName')} value={editing.last_name} onChange={field('last_name')} />
@@ -420,7 +628,7 @@ export default function Customers() {
             {/* Footer */}
             <div className="flex gap-3 px-6 py-4 border-t border-surface-600">
               <button
-                onClick={() => setShowModal(false)}
+                onClick={closeModal}
                 className="flex-1 py-2 text-sm text-gray-400 hover:text-white border border-surface-600 rounded-lg transition-colors"
               >
                 {t('customers.cancel')}
@@ -433,6 +641,84 @@ export default function Customers() {
                 {saving ? '...' : t('customers.save')}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* CSV Import Preview Modal */}
+      {csvPreview && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
+          <div className="bg-surface-800 rounded-2xl w-full max-w-lg shadow-2xl">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-600">
+              <h2 className="text-base font-semibold text-white">Εισαγωγή επαφών από CSV</h2>
+              <button onClick={() => setCsvPreview(null)} className="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
+            </div>
+            <div className="px-6 py-4">
+              <p className="text-sm text-gray-300 mb-3">Βρέθηκαν <span className="text-white font-semibold">{csvPreview.length}</span> επαφές:</p>
+              <div className="max-h-64 overflow-y-auto space-y-1 mb-4">
+                {csvPreview.map((c, i) => (
+                  <div key={i} className="flex items-center gap-3 px-3 py-2 bg-surface-700 rounded-lg text-sm">
+                    <span className="text-white font-medium truncate flex-1">{c.name}</span>
+                    {c.phone && <span className="text-gray-400 text-xs shrink-0">{c.phone}</span>}
+                    {c.email && <span className="text-gray-400 text-xs shrink-0">{c.email}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-3 px-6 pb-5">
+              <button onClick={() => setCsvPreview(null)} className="flex-1 py-2 text-sm font-medium bg-surface-700 hover:bg-surface-600 text-gray-300 rounded-lg transition-colors">
+                Ακύρωση
+              </button>
+              <button onClick={importCsv} disabled={csvImporting} className="flex-1 py-2 text-sm font-medium bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg transition-colors">
+                {csvImporting ? 'Εισαγωγή...' : `Εισαγωγή ${csvPreview.length} επαφών`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Right-click context menu */}
+      {contextMenu && (
+        <div
+          className="fixed inset-0 z-50"
+          onClick={() => setContextMenu(null)}
+          onContextMenu={e => { e.preventDefault(); setContextMenu(null) }}
+        >
+          <div
+            className="absolute bg-surface-700 border border-surface-500 rounded-lg shadow-xl py-1 min-w-[160px]"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-surface-600 hover:text-white transition-colors"
+              onClick={() => { setContextMenu(null); openEdit(contextMenu.customer) }}
+            >
+              ✏️ Edit
+            </button>
+            <div className="border-t border-surface-600 my-1" />
+            <button
+              className="w-full text-left px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+              onClick={async () => {
+                const isSelected = selectedIds.has(contextMenu.customer.id)
+                const isBulk = isSelected && selectedIds.size > 1
+                const msg = isBulk
+                  ? `Delete ${selectedIds.size} selected customers? This cannot be undone.`
+                  : `Delete "${contextMenu.customer.name}"? This cannot be undone.`
+                if (!window.confirm(msg)) return
+                setContextMenu(null)
+                if (isBulk) {
+                  await deleteCustomers(Array.from(selectedIds))
+                  exitSelectMode()
+                } else {
+                  await deleteCustomer(contextMenu.customer.id)
+                }
+                if (selected?.id === contextMenu.customer.id) setSelected(null)
+                load()
+              }}
+            >
+              {selectedIds.has(contextMenu.customer.id) && selectedIds.size > 1
+                ? `🗑 Delete ${selectedIds.size} selected`
+                : '🗑 Delete'}
+            </button>
           </div>
         </div>
       )}

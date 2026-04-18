@@ -45,15 +45,63 @@ Deno.serve(async (req: Request) => {
     return new Response('No call data', { status: 400 })
   }
 
-  const vapiCallId    = String(callData.id ?? '')
-  const customerPhone = extractPhone(callData)
-  const status        = normalizeStatus(String(event?.type ?? ''))
-  const durationSecs  = typeof callData.duration === 'number' ? callData.duration : null
-  const transcript    = extractTranscript(callData)
-  const summary       = extractSummary(callData)
-  const recordingUrl  = String((callData.recordingUrl ?? callData.recording_url) ?? '')
-  const startedAt     = callData.startedAt ?? callData.started_at ?? null
-  const endedAt       = callData.endedAt   ?? callData.ended_at   ?? null
+  const vapiCallId     = String(callData.id ?? '')
+  const vapiAssistantId = String(callData.assistantId ?? callData.assistant_id ?? '')
+  const customerPhone  = extractPhone(callData)
+  const status         = normalizeStatus(String(event?.type ?? ''))
+  const durationSecs   = typeof callData.duration === 'number' ? callData.duration : null
+  const transcript     = extractTranscript(callData)
+  const summary        = extractSummary(callData)
+  const recordingUrl   = String((callData.recordingUrl ?? callData.recording_url) ?? '')
+  const startedAt      = callData.startedAt ?? callData.started_at ?? null
+  const endedAt        = callData.endedAt   ?? callData.ended_at   ?? null
+
+  // ── Resolve owner from assistant ID ───────────────────────────────────
+  // Each Pro+ customer has their own assistant. We look up who owns this one.
+  let ownerId: string | null = url.searchParams.get('owner') // fallback for legacy
+
+  if (!ownerId && vapiAssistantId) {
+    const { data: sub } = await supabase
+      .from('subscriptions')
+      .select('user_id')
+      .eq('vapi_assistant_id', vapiAssistantId)
+      .maybeSingle()
+    ownerId = sub?.user_id ?? null
+  }
+
+  if (!ownerId) {
+    console.error('Could not resolve owner for assistant:', vapiAssistantId)
+    return new Response('Cannot resolve owner', { status: 400 })
+  }
+
+  // ── Track VAPI minutes used ────────────────────────────────────────────
+  if (vapiAssistantId && durationSecs && status === 'completed') {
+    const minutesUsed = Math.ceil(durationSecs / 60)
+    // Increment minutes_used; also check if over limit
+    const { data: sub } = await supabase
+      .from('subscriptions')
+      .select('id, vapi_minutes_used')
+      .eq('user_id', ownerId)
+      .maybeSingle()
+
+    if (sub) {
+      const newTotal = (sub.vapi_minutes_used ?? 0) + minutesUsed
+      await supabase.from('subscriptions').update({
+        vapi_minutes_used: newTotal,
+        updated_at: new Date().toISOString(),
+      }).eq('id', sub.id)
+
+      // Hard cap: disable assistant at 100 minutes
+      if (newTotal >= 100) {
+        await disableVapiAssistant(vapiAssistantId)
+        console.log(`User ${ownerId} hit 100 min cap — assistant disabled`)
+      }
+      // Warning: log at 80 minutes (in-app warning handled client-side via subscription fetch)
+      else if (newTotal >= 80) {
+        console.log(`User ${ownerId} at ${newTotal} min — warning threshold reached`)
+      }
+    }
+  }
 
   // ── Look up or create customer ─────────────────────────────────────────
   let customerId: string | null = null
@@ -63,6 +111,7 @@ Deno.serve(async (req: Request) => {
     const { data: existing } = await supabase
       .from('customers')
       .select('id, name')
+      .eq('owner_id', ownerId)
       .eq('phone', customerPhone)
       .maybeSingle()
 
@@ -75,6 +124,7 @@ Deno.serve(async (req: Request) => {
       customerName = customerPhone
       await supabase.from('customers').insert({
         id: newId,
+        owner_id: ownerId,
         name: customerPhone,
         phone: customerPhone,
       })
@@ -86,6 +136,7 @@ Deno.serve(async (req: Request) => {
   const callId = crypto.randomUUID()
   const { error } = await supabase.from('calls').upsert({
     id: callId,
+    owner_id: ownerId,
     vapi_call_id: vapiCallId,
     customer_id: customerId,
     customer_phone: customerPhone,
@@ -135,4 +186,22 @@ function extractTranscript(call: Record<string, unknown>): string | null {
 function extractSummary(call: Record<string, unknown>): string | null {
   const analysis = call.analysis as Record<string, unknown> | undefined
   return String(analysis?.summary ?? call.summary ?? '') || null
+}
+
+async function disableVapiAssistant(assistantId: string): Promise<void> {
+  try {
+    const apiKey = Deno.env.get('VAPI_API_KEY') ?? ''
+    if (!apiKey) return
+    // Set the assistant to reject all calls by clearing its phone number association
+    await fetch(`https://api.vapi.ai/assistant/${assistantId}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization:  `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ isServerUrlSecret: true, silenceTimeoutSeconds: 0 }),
+    })
+  } catch (err) {
+    console.error('Failed to disable assistant:', err)
+  }
 }

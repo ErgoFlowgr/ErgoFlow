@@ -1,10 +1,10 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getCalls, getCallStats, getCategories, type Call, type Category } from '../../lib/db'
+import { getCalls, getCallStats, getCategories, deleteCall, type Call, type Category } from '../../lib/db'
 import CallDetailPanel from './CallDetailPanel'
 
 export default function Calls() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [calls, setCalls] = useState<Call[]>([])
   const [stats, setStats] = useState({ total: 0, inbound: 0, outbound: 0, missed: 0 })
   const [categories, setCategories] = useState<Category[]>([])
@@ -25,8 +25,11 @@ export default function Calls() {
     return () => clearInterval(interval)
   }, [load])
 
-  const catName = (id: string | null) =>
-    categories.find(c => c.id === id)?.name_el ?? '—'
+  const catName = (id: string | null) => {
+    const cat = categories.find(c => c.id === id)
+    if (!cat) return '—'
+    return i18n.language === 'en' ? cat.name_en : cat.name_el
+  }
 
   const formatDuration = (secs: number | null) => {
     if (!secs) return '—'
@@ -91,6 +94,7 @@ export default function Calls() {
                   <th className="text-left px-4 py-3 font-medium">{t('calls.duration')}</th>
                   <th className="text-left px-4 py-3 font-medium">{t('calls.category')}</th>
                   <th className="text-left px-4 py-3 font-medium">{t('calls.status')}</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody>
@@ -106,6 +110,23 @@ export default function Calls() {
                     <td className="px-4 py-3 text-gray-400">{formatDuration(call.duration_seconds)}</td>
                     <td className="px-4 py-3 text-gray-400">{catName(call.category_id)}</td>
                     <td className="px-4 py-3">{statusBadge(call.status)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        onClick={async e => {
+                          e.stopPropagation()
+                          if (!confirm('Delete this call?')) return
+                          await deleteCall(call.id)
+                          if (selected?.id === call.id) setSelected(null)
+                          load()
+                        }}
+                        className="p-1.5 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        title="Delete call"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

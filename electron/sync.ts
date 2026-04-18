@@ -10,6 +10,14 @@ function slog(msg: string) {
   console.log(msg)
   try {
     const logFile = path.join(app.getPath('userData'), 'sync-debug.log')
+    // Trim log to last 100KB if it exceeds 200KB
+    try {
+      const stat = fs.statSync(logFile)
+      if (stat.size > 200_000) {
+        const content = fs.readFileSync(logFile, 'utf8')
+        fs.writeFileSync(logFile, content.slice(-100_000))
+      }
+    } catch {}
     fs.appendFileSync(logFile, `[${new Date().toISOString()}] ${msg}\n`)
   } catch {}
 }
@@ -22,12 +30,27 @@ const ALLOWED_SYNC_TABLES = new Set([
   'inventory',
 ])
 
-const SYNC_INTERVAL_MS = 60_000 // every 60 seconds
+const PUSH_INTERVAL_MS  =  30_000 // push pending changes every 30s (only if queue has items)
+const PULL_INTERVAL_MS  = 300_000 // full pull every 5 minutes
 
 export function setupSyncWorker(win: BrowserWindow | null) {
   sync(win) // run immediately on startup
   backfillVapiCalls(win) // pull VAPI call history on startup
-  setInterval(() => sync(win), SYNC_INTERVAL_MS)
+
+  // Push: frequent, but skipped when nothing is queued
+  setInterval(() => pushOnly(win), PUSH_INTERVAL_MS)
+
+  // Pull: every 5 minutes
+  setInterval(() => pullOnly(win), PULL_INTERVAL_MS)
+}
+
+// Called from main.ts when the window regains focus
+export function triggerPull(win: BrowserWindow | null) {
+  pullOnly(win)
+}
+
+export function triggerSync(win: BrowserWindow | null) {
+  sync(win)
 }
 
 function getOwnerIdFromToken(token: string): string | null {
@@ -65,7 +88,65 @@ async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
+let syncInProgress = false
+
 async function sync(win: BrowserWindow | null) {
+  if (syncInProgress) return
+  syncInProgress = true
+  try { await doSync(win) } finally { syncInProgress = false }
+}
+
+async function pushOnly(win: BrowserWindow | null) {
+  if (syncInProgress) return
+  // Skip if nothing to push
+  try {
+    const db = getDb()
+    const count = (db.prepare('SELECT COUNT(*) as n FROM sync_queue').get() as { n: number }).n
+    if (count === 0) return
+  } catch { return }
+  syncInProgress = true
+  try {
+    const url = SUPABASE_URL
+    const key = SUPABASE_ANON_KEY
+    let token = getSessionToken() ?? await getSecret('supabase_access_token')
+    if (!url || !key || !token) return
+    if (!token) token = await refreshAccessToken()
+    if (!token) return
+    const ownerId = getOwnerIdFromToken(token)
+    if (!ownerId) return
+    const db = getDb()
+    await pushLocalChanges(url, key, token, ownerId, db)
+    win?.webContents.send('sync:complete', { timestamp: new Date().toISOString() })
+    slog('[SYNC] Push-only done')
+  } catch (err) {
+    slog('[SYNC] Push-only error: ' + String(err))
+  } finally {
+    syncInProgress = false
+  }
+}
+
+async function pullOnly(win: BrowserWindow | null) {
+  if (syncInProgress) return
+  syncInProgress = true
+  try {
+    const url = SUPABASE_URL
+    const key = SUPABASE_ANON_KEY
+    let token = getSessionToken() ?? await getSecret('supabase_access_token')
+    if (!url || !key) return
+    if (!token) token = await refreshAccessToken()
+    if (!token) return
+    const db = getDb()
+    await pullRemoteChanges(url, key, token, db)
+    win?.webContents.send('sync:complete', { timestamp: new Date().toISOString() })
+    slog('[SYNC] Pull-only done')
+  } catch (err) {
+    slog('[SYNC] Pull-only error: ' + String(err))
+  } finally {
+    syncInProgress = false
+  }
+}
+
+async function doSync(win: BrowserWindow | null) {
   const supabaseUrl = SUPABASE_URL
   const supabaseKey = SUPABASE_ANON_KEY
   // Try in-memory session first, fall back to keychain
@@ -100,8 +181,11 @@ async function sync(win: BrowserWindow | null) {
     // 1. Push unsynced local changes to Supabase
     await pushLocalChanges(supabaseUrl, supabaseKey, accessToken, ownerId, db)
 
+    // Re-read token — push may have refreshed it
+    const freshToken = getSessionToken() ?? await getSecret('supabase_access_token') ?? accessToken
+
     // 2. Pull remote changes (e.g. calls from VAPI webhook)
-    await pullRemoteChanges(supabaseUrl, supabaseKey, accessToken, db)
+    await pullRemoteChanges(supabaseUrl, supabaseKey, freshToken, db)
 
     win?.webContents.send('sync:complete', { timestamp: new Date().toISOString() })
     slog('[SYNC] Done')
@@ -247,37 +331,111 @@ async function pushLocalChanges(url: string, key: string, accessToken: string, o
   }
 }
 
-async function pullRemoteChanges(url: string, key: string, accessToken: string, db: ReturnType<typeof getDb>) {
-  const tables = ['customers', 'calls', 'categories']
-  const headers = {
-    apikey: key,
-    Authorization: `Bearer ${accessToken}`,
-  }
+async function pullRemoteChanges(url: string, key: string, initialToken: string, db: ReturnType<typeof getDb>) {
+  // Order matters: parent tables before child tables (foreign key constraints)
+  const tables = ['settings', 'customers', 'calls', 'categories', 'offers', 'offer_items', 'jobs', 'invoices', 'invoice_items', 'inventory']
+  let accessToken = initialToken
+  const getHeaders = () => ({ apikey: key, Authorization: `Bearer ${accessToken}` })
+
+  // Disable foreign keys during pull to avoid ordering issues
+  try { db.pragma('foreign_keys = OFF') } catch { /* ignore */ }
+
+  // Get last pull timestamp — if never synced, pull everything
+  let lastPull: string | null = null
+  try {
+    const meta = db.prepare("SELECT value FROM sync_meta WHERE key = 'last_pull_at'").get() as { value: string } | undefined
+    lastPull = meta?.value ?? null
+  } catch { /* sync_meta table may not exist yet */ }
+
+  let anyFailed = false
 
   for (const table of tables) {
     try {
-      // Pull only records updated in last 2 minutes to avoid full scans
-      const since = new Date(Date.now() - 2 * 60_000).toISOString()
-      const res = await fetch(
-        `${url}/rest/v1/${table}?updated_at=gte.${since}&select=*`,
-        { headers }
-      )
-      if (!res.ok) continue
-      const rows = (await res.json()) as Record<string, unknown>[]
+      const filter = lastPull
+        ? `updated_at=gte.${lastPull}&select=*`
+        : `select=*`
+      let res = await fetch(`${url}/rest/v1/${table}?${filter}`, { headers: getHeaders() })
 
+      // On 401, refresh token and retry once
+      if (res.status === 401) {
+        slog('[SYNC] Pull got 401 — refreshing token and retrying')
+        const newToken = await refreshAccessToken()
+        if (newToken) {
+          accessToken = newToken
+          res = await fetch(`${url}/rest/v1/${table}?${filter}`, { headers: getHeaders() })
+        }
+      }
+
+      // On 400 with an incremental filter, the table likely lacks updated_at — retry as full pull
+      if (res.status === 400 && lastPull) {
+        slog(`[SYNC] Pull ${table} got 400 on incremental filter — retrying as full pull`)
+        res = await fetch(`${url}/rest/v1/${table}?select=*`, { headers: getHeaders() })
+      }
+
+      if (!res.ok) {
+        const body = await res.text().catch(() => '')
+        slog(`[SYNC] Pull failed ${table}: ${res.status} ${body.slice(0, 200)}`)
+        anyFailed = true
+        continue
+      }
+      const rows = (await res.json()) as Record<string, unknown>[]
+      if (rows.length === 0) { slog(`[SYNC] Pull ${table}: 0 rows`); continue }
+
+      // Get columns that actually exist in local SQLite table — skip unknown columns
+      // (if we include a column Supabase has but local doesn't, the entire INSERT fails silently)
       const SAFE_COL = /^[a-z_][a-z0-9_]*$/i
+      const tableInfo = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+      const localCols = new Set(tableInfo.map(r => r.name))
+
+      // Build set of record IDs that have pending local changes (not yet pushed)
+      // — these must not be overwritten by a pull
+      const pendingIds = new Set(
+        (db.prepare('SELECT record_id FROM sync_queue WHERE table_name = ?').all(table) as Array<{ record_id: string }>)
+          .map(r => r.record_id)
+      )
+
       for (const row of rows) {
-        const cols = Object.keys(row).filter(c => SAFE_COL.test(c))
+        // Skip records with pending local changes — local wins
+        if (row['id'] && pendingIds.has(String(row['id']))) continue
+
+        const cols = Object.keys(row).filter(c => SAFE_COL.test(c) && c !== 'owner_id' && localCols.has(c))
         if (cols.length === 0) continue
         const placeholders = cols.map(() => '?').join(', ')
         const updates = cols.map(c => `${c} = excluded.${c}`).join(', ')
-        db.prepare(
-          `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})
-           ON CONFLICT(id) DO UPDATE SET ${updates}, synced = 1`
-        ).run(...cols.map(c => row[c]))
+        // Convert booleans to 0/1 — SQLite doesn't accept JS booleans
+        const vals = cols.map(c => {
+          const v = row[c]
+          return typeof v === 'boolean' ? (v ? 1 : 0) : v
+        })
+        try {
+          db.prepare(
+            `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders})
+             ON CONFLICT(id) DO UPDATE SET ${updates}`
+          ).run(...vals)
+        } catch (e) {
+          slog(`[SYNC] Row insert failed ${table}: ${String(e).slice(0, 200)}`)
+        }
       }
+      slog(`[SYNC] Pulled ${rows.length} rows from ${table}`)
     } catch (err) {
       console.error(`Failed to pull ${table}:`, err)
     }
+  }
+
+  // Re-enable foreign keys
+  try { db.pragma('foreign_keys = ON') } catch { /* ignore */ }
+
+  // Only update last_pull_at if all tables succeeded — otherwise retry full pull next cycle
+  if (!anyFailed) {
+    try {
+      db.prepare("CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value TEXT)").run()
+      db.prepare("INSERT INTO sync_meta (key, value) VALUES ('last_pull_at', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .run(new Date().toISOString())
+    } catch { /* ignore */ }
+  } else {
+    // Clear last_pull_at so next sync does a full pull
+    try {
+      db.prepare("DELETE FROM sync_meta WHERE key = 'last_pull_at'").run()
+    } catch { /* ignore */ }
   }
 }

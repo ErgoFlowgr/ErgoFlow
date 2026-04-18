@@ -7,18 +7,35 @@ interface ElectronAPI {
     delete: (key: string) => Promise<void>
   }
   db: {
-    query: (sql: string, params?: unknown[]) => Promise<unknown[]>
-    run:   (sql: string, params?: unknown[]) => Promise<{ changes: number; lastInsertRowid: number }>
-    get:   (sql: string, params?: unknown[]) => Promise<unknown | undefined>
+    query:  (sql: string, params?: unknown[]) => Promise<unknown[]>
+    run:    (sql: string, params?: unknown[]) => Promise<{ changes: number; lastInsertRowid: number }>
+    get:    (sql: string, params?: unknown[]) => Promise<unknown | undefined>
+    switch: (userId: string) => Promise<void>
+    bulkDeleteCustomers: (ids: string[]) => Promise<void>
   }
+  syncNow: () => Promise<void>
   printInvoice: (html: string) => Promise<void>
+  savePdf:      (html: string, defaultName: string) => Promise<{ ok: boolean; filePath?: string }>
+  sharePdf:        (html: string, defaultName: string) => Promise<void>
+  saveDesktopPdf:  (html: string, filename: string)   => Promise<string>
   downloadPdf:  (url: string) => Promise<ArrayBuffer>
-  braveSearch:  (query: string, apiKey: string) => Promise<unknown>
+  braveSearch:  (query: string, apiKey: string, lang?: string) => Promise<unknown>
   fetchHtml:    (url: string) => Promise<string>
+  mydataSubmit: (params: { invoice: any, lineItems: any[], companyVat: string, customerVat: string, mydataUserId: string, mydataApiKey: string, documentType?: string }) => Promise<{ success: boolean, mark?: string, error?: string }>
+  ollama: {
+    tags:       (baseUrl: string) => Promise<{ models?: Array<{ name: string }> }>
+    chat:       (baseUrl: string, body: string) => Promise<{ message: { content: string } }>
+    embeddings: (baseUrl: string, body: string) => Promise<{ embedding: number[] }>
+  }
   notify:       (title: string, body: string) => Promise<void>
   openExternal: (url: string) => Promise<void>
   getVersion:   () => Promise<string>
   getDataPath:  () => Promise<string>
+  subscriptionCheck: () => Promise<{ status: string; daysLeft: number; trialEnd: string; tier: string; vapiMinutesUsed: number; vapiPhoneNumber: string | null }>
+  update: {
+    onReady: (cb: () => void) => void
+    install:  () => Promise<void>
+  }
   on:  (channel: string, cb: (...args: unknown[]) => void) => void
   off: (channel: string, cb: (...args: unknown[]) => void) => void
 }

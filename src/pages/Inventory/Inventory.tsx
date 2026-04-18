@@ -2,14 +2,15 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getInventory, upsertInventoryItem, deleteInventoryItem, uuid, type InventoryItem } from '../../lib/db'
 
-const UNITS = ['τεμ.', 'μ.', 'μ²', 'kg', 'ώρα', 'σετ', 'lt']
+const UNITS_EL = ['τεμ.', 'μ.', 'μ²', 'kg', 'ώρα', 'σετ', 'lt']
+const UNITS_EN = ['pcs', 'm', 'm²', 'kg', 'hr', 'set', 'lt']
 
 function formatPrice(n: number) {
   return n.toLocaleString('el-GR', { style: 'currency', currency: 'EUR' })
 }
 
 export default function Inventory() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [items, setItems] = useState<InventoryItem[]>([])
   const [search, setSearch] = useState('')
   const [showModal, setShowModal] = useState(false)
@@ -147,7 +148,9 @@ export default function Inventory() {
                 <div>
                   <label className="block text-xs text-gray-400 mb-1">{t('inventory.unit')}</label>
                   <select className="input w-full" value={unit} onChange={e => setUnit(e.target.value)}>
-                    {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                    {(i18n.language === 'en' ? UNITS_EN : UNITS_EL).map((u, i) => (
+                      <option key={u} value={i18n.language === 'en' ? UNITS_EN[i] : UNITS_EL[i]}>{u}</option>
+                    ))}
                   </select>
                 </div>
               </div>

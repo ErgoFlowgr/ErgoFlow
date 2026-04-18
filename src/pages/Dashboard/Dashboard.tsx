@@ -123,7 +123,8 @@ export default function Dashboard() {
   useEffect(() => {
     load()
     const interval = setInterval(load, 30_000)
-    return () => clearInterval(interval)
+    ipc.on('sync:complete', load)
+    return () => { clearInterval(interval); ipc.off('sync:complete', load) }
   }, [load])
 
   if (loading) {

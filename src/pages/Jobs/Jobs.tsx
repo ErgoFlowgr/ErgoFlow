@@ -1,8 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { getJobs, getCustomers, upsertJob, deleteJob, getSettings, type Job, type Customer } from '../../lib/db'
-import { getAIConfig, translateJobFields } from '../../lib/ai'
+import { getJobs, getCustomers, upsertJob, deleteJob, type Job, type Customer } from '../../lib/db'
 
 type Status = Job['status'] | 'all'
 type Priority = Job['priority']
@@ -90,7 +89,6 @@ export default function Jobs() {
   const [editingJob, setEditingJob] = useState<Job | null>(null)
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
-  const [translating, setTranslating] = useState(false)
   const [translateError, setTranslateError] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
   const [dateFilter, setDateFilter] = useState<string | null>(null)
@@ -203,34 +201,9 @@ export default function Jobs() {
     await load()
   }
 
-  const handleTranslate = async () => {
-    if (!form.title.trim() && !form.description.trim() && !form.notes.trim()) return
-    setTranslating(true)
-    setTranslateError('')
-    try {
-      const settings = await getSettings()
-      const config = await getAIConfig(
-        settings.ai_provider ?? 'claude',
-        settings.ollama_url ?? undefined,
-        settings.ollama_chat_model ?? undefined,
-        settings.ollama_embed_model ?? undefined,
-        settings.claude_api_key
-      )
-      const result = await translateJobFields(
-        { title: form.title, description: form.description, notes: form.notes },
-        i18n.language,
-        config
-      )
-      setForm(f => ({ ...f, title: result.title, description: result.description, notes: result.notes }))
-    } catch (e) {
-      setTranslateError(e instanceof Error ? e.message : 'Translation failed')
-    } finally {
-      setTranslating(false)
-    }
-  }
 
   const statusFiltered = filter === 'all' ? jobs : jobs.filter(j => j.status === filter)
-  const filtered = dateFilter ? statusFiltered.filter(j => j.scheduled_date === dateFilter) : statusFiltered
+  const filtered = dateFilter ? statusFiltered.filter(j => j.scheduled_date?.slice(0, 10) === dateFilter) : statusFiltered
 
   const counts = {
     all: jobs.length,
@@ -253,7 +226,7 @@ export default function Jobs() {
     }
     return acc
   }, {})
-  const isInRange = (ds: string) => {
+  const isInRange = (ds: string) => {  // ds is already YYYY-MM-DD from getCalendarDays
     if (!dragStart || !dragEnd) return false
     const [a, b] = dragStart <= dragEnd ? [dragStart, dragEnd] : [dragEnd, dragStart]
     return ds >= a && ds <= b
@@ -392,8 +365,8 @@ export default function Jobs() {
                 ? (dragStart <= dragEnd ? [dragStart, dragEnd] : [dragEnd, dragStart])
                 : [null, null]
               const rangeJobs = rangeA
-                ? jobs.filter(j => j.scheduled_date && j.scheduled_date >= rangeA && j.scheduled_date <= rangeB!)
-                : jobs.filter(j => j.scheduled_date === today)
+                ? jobs.filter(j => j.scheduled_date && j.scheduled_date.slice(0, 10) >= rangeA && j.scheduled_date.slice(0, 10) <= rangeB!)
+                : jobs.filter(j => j.scheduled_date?.slice(0, 10) === today)
 
               const headerDate = rangeA
                 ? (rangeA === rangeB
@@ -461,7 +434,7 @@ export default function Jobs() {
         ) : (
           <div className="space-y-2">
             {filtered.map(job => (
-              <div key={job.id} className="bg-surface-800 rounded-xl p-4 flex items-start gap-4 hover:bg-surface-750 transition-colors">
+              <div key={job.id} className="bg-surface-800 rounded-xl p-4 flex items-start gap-4 hover:bg-surface-750 transition-colors cursor-pointer" onClick={() => openEdit(job)}>
                 {/* Priority indicator */}
                 <div className={`w-1 self-stretch rounded-full ${
                   job.priority === 'high' ? 'bg-red-500' :
@@ -497,7 +470,7 @@ export default function Jobs() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-1 shrink-0" onClick={e => e.stopPropagation()}>
                   {job.offer_id && (
                     <button
                       onClick={() => navigate('/offers', { state: { offerId: job.offer_id } })}
@@ -532,22 +505,7 @@ export default function Jobs() {
           <div className="bg-surface-800 rounded-2xl w-full max-w-lg shadow-2xl">
             <div className="flex items-center justify-between px-6 py-4 border-b border-surface-600">
               <h2 className="text-base font-semibold text-white">{editingJob ? t('jobs.editJob') : t('jobs.newJob')}</h2>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleTranslate}
-                  disabled={translating}
-                  className="flex items-center gap-1.5 text-xs text-brand-400 hover:text-brand-300 disabled:opacity-50 transition-colors"
-                  title={i18n.language === 'el' ? 'Μετάφραση σε Ελληνικά' : 'Translate to English'}
-                >
-                  {translating ? (
-                    <span className="w-3 h-3 border border-brand-400 border-t-transparent rounded-full animate-spin inline-block" />
-                  ) : (
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" /></svg>
-                  )}
-                  {i18n.language === 'el' ? 'Μετάφραση' : 'Translate'}
-                </button>
-                <button onClick={() => { setShowForm(false); setTranslateError('') }} className="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
-              </div>
+              <button onClick={() => { setShowForm(false); setTranslateError('') }} className="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
             </div>
             {translateError && (
               <p className="px-6 pt-3 text-xs text-red-400">{translateError}</p>
@@ -656,20 +614,57 @@ export default function Jobs() {
               </label>
             </div>
 
-            <div className="flex gap-3 px-6 py-4 border-t border-surface-600">
-              <button
-                onClick={() => setShowForm(false)}
-                className="flex-1 py-2 text-sm text-gray-400 hover:text-white border border-surface-600 rounded-lg transition-colors"
-              >
-                {t('jobs.cancel')}
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving || !form.title.trim()}
-                className="flex-1 py-2 text-sm font-medium bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg transition-colors"
-              >
-                {saving ? t('jobs.saving') : t('jobs.save')}
-              </button>
+            <div className="px-6 py-4 border-t border-surface-600 space-y-3">
+              {/* Linked document shortcuts */}
+              {editingJob && (editingJob.offer_id || editingJob.invoice_id) && (
+                <div className="flex gap-2">
+                  {editingJob.offer_id && (
+                    <button
+                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-lg transition-colors"
+                      onClick={() => { setShowForm(false); navigate('/offers', { state: { offerId: editingJob.offer_id } }) }}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
+                      {t('jobs.viewOffer')}
+                    </button>
+                  )}
+                  {editingJob.invoice_id && (
+                    <button
+                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-lg transition-colors"
+                      onClick={() => { setShowForm(false); navigate('/invoices', { state: { invoiceId: editingJob.invoice_id } }) }}
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      {t('jobs.viewInvoice')}
+                    </button>
+                  )}
+                </div>
+              )}
+              {editingJob && !editingJob.invoice_id && (
+                <button
+                  className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-gray-400 bg-surface-700 hover:bg-surface-600 hover:text-white rounded-lg transition-colors"
+                  onClick={() => {
+                    setShowForm(false)
+                    navigate('/invoices', { state: { fromJob: { customer_id: editingJob.customer_id, customer_name: editingJob.customer_name, description: editingJob.description, notes: editingJob.notes, job_id: editingJob.id } } })
+                  }}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                  {t('jobs.createInvoice')}
+                </button>
+              )}
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setShowForm(false)}
+                  className="flex-1 py-2 text-sm text-gray-400 hover:text-white border border-surface-600 rounded-lg transition-colors"
+                >
+                  {t('jobs.cancel')}
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving || !form.title.trim()}
+                  className="flex-1 py-2 text-sm font-medium bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg transition-colors"
+                >
+                  {saving ? t('jobs.saving') : t('jobs.save')}
+                </button>
+              </div>
             </div>
           </div>
         </div>

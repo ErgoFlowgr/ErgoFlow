@@ -12,6 +12,20 @@ export function initDatabase() {
   runMigrations()
 }
 
+export function switchDatabase(userId: string) {
+  try { db.close() } catch { /* ignore */ }
+  const dbPath = path.join(app.getPath('userData'), `crm-${userId}.db`)
+  db = new Database(dbPath)
+  db.pragma('journal_mode = WAL')
+  db.pragma('foreign_keys = ON')
+  runMigrations()
+  // Clear last_pull_at so the next sync does a full pull from Supabase
+  try {
+    db.prepare("CREATE TABLE IF NOT EXISTS sync_meta (key TEXT PRIMARY KEY, value TEXT)").run()
+    db.prepare("DELETE FROM sync_meta WHERE key = 'last_pull_at'").run()
+  } catch { /* ignore */ }
+}
+
 export function getDb() {
   if (!db) throw new Error('Database not initialized')
   return db
@@ -156,6 +170,9 @@ function runMigrations() {
       tax_rate REAL DEFAULT 0,
       tax_amount REAL DEFAULT 0,
       total REAL DEFAULT 0,
+      mydata_mark TEXT DEFAULT NULL,
+      mydata_status TEXT DEFAULT 'pending',
+      mydata_error TEXT DEFAULT NULL,
       created_at TEXT DEFAULT (datetime('now')),
       updated_at TEXT DEFAULT (datetime('now')),
       synced INTEGER DEFAULT 0
@@ -264,6 +281,18 @@ function runMigrations() {
   tryAlter(`ALTER TABLE settings ADD COLUMN owner_last_name TEXT`)
   tryAlter(`ALTER TABLE invoice_items ADD COLUMN synced INTEGER DEFAULT 0`)
   tryAlter(`ALTER TABLE jobs ADD COLUMN offer_id TEXT`)
+  tryAlter(`ALTER TABLE jobs ADD COLUMN invoice_id TEXT`)
+  tryAlter(`ALTER TABLE settings ADD COLUMN hidden_tabs TEXT`)
+  tryAlter(`ALTER TABLE settings ADD COLUMN image_model TEXT`)
+  tryAlter(`ALTER TABLE settings ADD COLUMN ollama_vision_model TEXT`)
+  // Invoice myDATA fields
+  tryAlter(`ALTER TABLE invoices ADD COLUMN mydata_mark TEXT DEFAULT NULL`)
+  tryAlter(`ALTER TABLE invoices ADD COLUMN mydata_status TEXT DEFAULT 'pending'`)
+  tryAlter(`ALTER TABLE invoices ADD COLUMN mydata_error TEXT DEFAULT NULL`)
+  // Settings myDATA credentials
+  tryAlter(`ALTER TABLE settings ADD COLUMN company_vat TEXT`)
+  tryAlter(`ALTER TABLE settings ADD COLUMN mydata_user_id TEXT`)
+  tryAlter(`ALTER TABLE settings ADD COLUMN mydata_api_key TEXT`)
 }
 
 /** Delete pending jobs older than 30 days that are not pinned. */

@@ -30,6 +30,12 @@ export interface Settings {
   claude_api_key: string | null  // synced to Supabase so Android can read it
   allow_web_search: number
   brave_search_key: string | null
+  hidden_tabs: string | null  // JSON array of tab paths e.g. '["calls","invoices"]'
+  image_model: string | null        // Claude model used for image/vision analysis
+  ollama_vision_model: string | null // Local Ollama vision model (e.g. llava)
+  company_vat: string | null        // ΑΦΜ εταιρείας for myDATA
+  mydata_user_id: string | null     // ΑΑΔΕ username (aade-user-id)
+  mydata_api_key: string | null     // myDATA Ocp-Apim-Subscription-Key
 }
 
 export async function getSettings(): Promise<Settings> {
@@ -46,6 +52,7 @@ export async function saveSettings(patch: Partial<Settings>): Promise<void> {
     'INSERT INTO sync_queue (table_name, record_id, operation) VALUES (?, ?, ?)',
     ['settings', 'main', 'upsert']
   )
+  window.dispatchEvent(new CustomEvent('settings:changed'))
 }
 
 // ── Categories ─────────────────────────────────────────────────────────────
@@ -134,12 +141,23 @@ export async function upsertCustomer(c: Partial<Customer> & { name: string }): P
      c.notes ?? null]
   )
   await queueSync('customers', id, 'upsert')
+  // Propagate name change to all linked records
+  if (c.id) {
+    await ipc.db.run(`UPDATE jobs     SET customer_name = ?, updated_at = datetime('now'), synced = 0 WHERE customer_id = ?`, [c.name, c.id])
+    await ipc.db.run(`UPDATE offers   SET customer_name = ?, updated_at = datetime('now'), synced = 0 WHERE customer_id = ?`, [c.name, c.id])
+    await ipc.db.run(`UPDATE invoices SET customer_name = ?, updated_at = datetime('now'), synced = 0 WHERE customer_id = ?`, [c.name, c.id])
+  }
   return id
 }
 
 export async function deleteCustomer(id: string): Promise<void> {
   await ipc.db.run('DELETE FROM customers WHERE id = ?', [id])
   await queueSync('customers', id, 'delete')
+}
+
+export async function deleteCustomers(ids: string[]): Promise<void> {
+  if (!ids.length) return
+  await ipc.db.bulkDeleteCustomers(ids)
 }
 
 // ── Calls ──────────────────────────────────────────────────────────────────
@@ -167,6 +185,11 @@ export async function getCalls(limit = 200): Promise<Call[]> {
     'SELECT * FROM calls ORDER BY started_at DESC LIMIT ?',
     [limit]
   ) as Promise<Call[]>
+}
+
+export async function deleteCall(id: string): Promise<void> {
+  await ipc.db.run('DELETE FROM calls WHERE id = ?', [id])
+  await queueSync('calls', id, 'delete')
 }
 
 export async function getCallsByCustomer(customerId: string): Promise<Call[]> {
@@ -270,6 +293,10 @@ export async function updateChatMessage(id: string, content: string): Promise<vo
   await ipc.db.run('UPDATE chat_messages SET content = ? WHERE id = ?', [content, id])
 }
 
+export async function clearChatHistory(): Promise<void> {
+  await ipc.db.run('DELETE FROM chat_messages')
+}
+
 // ── Overseer log ───────────────────────────────────────────────────────────
 
 export interface OverseerEntry {
@@ -303,6 +330,7 @@ export interface Job {
   notes: string | null
   keep_indefinitely: number   // 1 = never auto-delete
   offer_id: string | null
+  invoice_id: string | null
   created_at: string
   updated_at: string
 }
@@ -321,19 +349,20 @@ export async function getJobsByCustomer(customerId: string): Promise<Job[]> {
 export async function upsertJob(j: Partial<Job> & { title: string }): Promise<string> {
   const id = j.id ?? uuid()
   await ipc.db.run(
-    `INSERT INTO jobs (id, customer_id, customer_name, title, description, status, priority, scheduled_date, completed_date, notes, keep_indefinitely, offer_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO jobs (id, customer_id, customer_name, title, description, status, priority, scheduled_date, completed_date, notes, keep_indefinitely, offer_id, invoice_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        customer_id=excluded.customer_id, customer_name=excluded.customer_name,
        title=excluded.title, description=excluded.description, status=excluded.status,
        priority=excluded.priority, scheduled_date=excluded.scheduled_date,
        completed_date=excluded.completed_date, notes=excluded.notes,
        keep_indefinitely=excluded.keep_indefinitely, offer_id=excluded.offer_id,
+       invoice_id=excluded.invoice_id,
        updated_at=datetime('now'), synced=0`,
     [id, j.customer_id ?? null, j.customer_name ?? null, j.title,
      j.description ?? null, j.status ?? 'pending', j.priority ?? 'normal',
      j.scheduled_date ?? null, j.completed_date ?? null, j.notes ?? null,
-     j.keep_indefinitely ?? 0, j.offer_id ?? null]
+     j.keep_indefinitely ?? 0, j.offer_id ?? null, j.invoice_id ?? null]
   )
   await queueSync('jobs', id, 'upsert')
   return id
@@ -361,7 +390,7 @@ export interface Invoice {
   customer_id: string | null
   customer_name: string | null
   customer_address: string | null
-  status: 'draft' | 'sent' | 'paid'
+  status: 'draft' | 'pending' | 'paid'
   issue_date: string | null
   due_date: string | null
   notes: string | null
@@ -372,6 +401,9 @@ export interface Invoice {
   tax_rate: number
   tax_amount: number
   total: number
+  mydata_mark?: string | null
+  mydata_status?: string
+  mydata_error?: string | null
   created_at: string
   updated_at: string
 }
@@ -399,8 +431,18 @@ export async function getInvoiceItems(invoiceId: string): Promise<InvoiceItem[]>
 
 export async function getNextInvoiceNumber(): Promise<string> {
   const year = new Date().getFullYear()
-  const count = ((await ipc.db.get('SELECT COUNT(*) as n FROM invoices') as { n: number }).n) + 1
-  return `INV-${year}-${String(count).padStart(3, '0')}`
+  // Find the highest numeric suffix among existing invoices to avoid duplicates.
+  // COUNT(*) would produce gaps/duplicates if any invoices were deleted.
+  const rows = await ipc.db.query(`SELECT number FROM invoices`) as { number: string }[]
+  let maxNum = 0
+  for (const row of rows) {
+    const m = row.number.match(/(\d+)$/)
+    if (m) {
+      const n = parseInt(m[1], 10)
+      if (n > maxNum) maxNum = n
+    }
+  }
+  return `INV-${year}-${String(maxNum + 1).padStart(3, '0')}`
 }
 
 export async function upsertInvoice(inv: Partial<Invoice> & { number: string }, items: Omit<InvoiceItem, 'invoice_id'>[]): Promise<string> {
@@ -452,6 +494,71 @@ export async function upsertInvoice(inv: Partial<Invoice> & { number: string }, 
   }
 
   return id
+}
+
+export async function submitInvoiceToMydata(inv: Invoice, items: Omit<InvoiceItem, 'invoice_id'>[]): Promise<{ success: boolean; error?: string }> {
+  const s = await getSettings()
+  const companyVat   = s?.company_vat   ?? ''
+  const mydataUserId = s?.mydata_user_id ?? ''
+  const mydataApiKey = s?.mydata_api_key ?? ''
+
+  if (!companyVat || !mydataUserId || !mydataApiKey) {
+    const err = 'Missing myDATA credentials. Go to Settings → myDATA / ΑΑΔΕ.'
+    await ipc.db.run(
+      `UPDATE invoices SET mydata_status = 'failed', mydata_error = ?, updated_at = datetime('now') WHERE id = ?`,
+      [err, inv.id]
+    )
+    return { success: false, error: err }
+  }
+
+  let customerVat = ''
+  if (inv.customer_id) {
+    const cust = await ipc.db.get('SELECT vat_number FROM customers WHERE id = ?', [inv.customer_id]) as { vat_number?: string } | undefined
+    customerVat = cust?.vat_number ?? ''
+  }
+
+  const subtotal  = items.reduce((s, it) => s + it.total, 0)
+  const taxAmount = inv.tax_amount
+  const total     = inv.total
+
+  try {
+    const result = await ipc.mydataSubmit({
+      invoice: {
+        number:        inv.number,
+        issue_date:    inv.issue_date ?? null,
+        document_type: inv.document_type ?? 'invoice',
+        subtotal,
+        tax_amount:    taxAmount,
+        total,
+      },
+      lineItems: items,
+      companyVat,
+      customerVat,
+      mydataUserId,
+      mydataApiKey,
+    })
+    if (result.success && result.mark) {
+      await ipc.db.run(
+        `UPDATE invoices SET mydata_mark = ?, mydata_status = 'submitted', mydata_error = NULL, updated_at = datetime('now') WHERE id = ?`,
+        [result.mark, inv.id]
+      )
+      return { success: true }
+    } else {
+      const err = result.error ?? 'Unknown error'
+      await ipc.db.run(
+        `UPDATE invoices SET mydata_status = 'failed', mydata_error = ?, updated_at = datetime('now') WHERE id = ?`,
+        [err, inv.id]
+      )
+      return { success: false, error: err }
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err)
+    await ipc.db.run(
+      `UPDATE invoices SET mydata_status = 'failed', mydata_error = ?, updated_at = datetime('now') WHERE id = ?`,
+      [msg, inv.id]
+    )
+    return { success: false, error: msg }
+  }
 }
 
 export async function deleteInvoice(id: string): Promise<void> {

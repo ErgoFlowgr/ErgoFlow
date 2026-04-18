@@ -24,7 +24,7 @@ function formatCurrency(n: number) {
   return n.toLocaleString('el-GR', { style: 'currency', currency: 'EUR' })
 }
 
-async function printOffer(off: Offer, items: OfferItem[], settings: Settings | null) {
+async function buildOfferHtml(off: Offer, items: OfferItem[], settings: Settings | null): Promise<string> {
   const company   = settings?.company_name ?? ''
   const ownerName = settings?.owner_name   ?? ''
   const ownerLast = settings?.owner_last_name ?? ''
@@ -162,12 +162,20 @@ ${off.notes ? `<div class="notes-box"><strong>Σημειώσεις / Notes:</str
 <div class="footer">Η προσφορά ισχύει για 30 ημέρες &bull; This offer is valid for 30 days</div>
 
 </body></html>`
+  return html
+}
 
-  await ipc.printInvoice(html)
+async function printOffer(off: Offer, items: OfferItem[], settings: Settings | null) {
+  await ipc.printInvoice(await buildOfferHtml(off, items, settings))
+}
+
+async function saveOfferPdf(off: Offer, items: OfferItem[], settings: Settings | null) {
+  const html = await buildOfferHtml(off, items, settings)
+  await ipc.savePdf(html, `Προσφορά-${off.number}.pdf`)
 }
 
 export default function Offers() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const location = useLocation()
   const [offers, setOffers] = useState<Offer[]>([])
@@ -336,6 +344,48 @@ export default function Offers() {
     }
   }
 
+  const handleSavePdf = async (off: Offer) => {
+    try {
+      const offItems = await getOfferItems(off.id)
+      await saveOfferPdf(off, offItems, settings)
+    } catch (e) {
+      alert('PDF error: ' + e)
+    }
+  }
+
+  const handleShareMessenger = async (off: Offer, messenger: 'whatsapp' | 'viber') => {
+    const offItems = await getOfferItems(off.id)
+    const lines = offItems.filter(it => it.description.trim()).map(it =>
+      `  • ${it.description} x${it.quantity}  ${it.total.toLocaleString('el-GR', { minimumFractionDigits: 2 })}€`
+    ).join('\n')
+    const discount = off.discount_amount > 0
+      ? `\nΈκπτωση: -${off.discount_amount.toLocaleString('el-GR', { minimumFractionDigits: 2 })}€`
+      : ''
+    const companyName = settings?.company_name ?? ''
+    const phone = settings?.phone ?? settings?.phone2 ?? ''
+    const text = [
+      `📋 ΠΡΟΣΦΟΡΑ ${off.number}`,
+      `Ημερομηνία: ${off.issue_date ?? ''}`,
+      off.customer_name ? `Πελάτης: ${off.customer_name}` : '',
+      '',
+      'Εργασίες / Υλικά:',
+      lines,
+      '',
+      `Καθαρή αξία: ${off.subtotal.toLocaleString('el-GR', { minimumFractionDigits: 2 })}€${discount}`,
+      `ΦΠΑ 24%: ${off.tax_amount.toLocaleString('el-GR', { minimumFractionDigits: 2 })}€`,
+      `ΣΥΝΟΛΟ: ${off.total.toLocaleString('el-GR', { minimumFractionDigits: 2 })}€`,
+      off.notes ? `\nΣημειώσεις: ${off.notes}` : '',
+      '',
+      [companyName, phone].filter(Boolean).join(' | '),
+    ].filter(l => l !== undefined && l !== null).join('\n').trim()
+
+    const encoded = encodeURIComponent(text)
+    const url = messenger === 'whatsapp'
+      ? `whatsapp://send?text=${encoded}`
+      : `viber://forward?text=${encoded}`
+    await ipc.openExternal(url)
+  }
+
   const handleCreateJob = async (off: Offer, scheduledDate?: string) => {
     setCreatingJob(off.id)
     try {
@@ -431,6 +481,14 @@ export default function Offers() {
               </div>
               <div className="flex gap-2 shrink-0 items-center" onClick={e => e.stopPropagation()}>
                 <button
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                  onClick={() => navigate('/invoices', { state: { fromOffer: { customer_id: off.customer_id, customer_name: off.customer_name, customer_address: off.customer_address, offer_number: off.number, offer_id: off.id } } })}
+                  title="Create Invoice"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                  Invoice
+                </button>
+                <button
                   className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-surface-700 text-gray-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
                   onClick={() => { setConfirmJobDate(''); setConfirmJobOffer(off) }}
                   disabled={creatingJob === off.id}
@@ -444,12 +502,42 @@ export default function Offers() {
                   {t('offers.createJob')}
                 </button>
                 <button
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
+                  onClick={() => handleShareMessenger(off, 'whatsapp')}
+                  title="Κοινοποίηση στο WhatsApp"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/>
+                    <path d="M11.992 2C6.476 2 2 6.476 2 11.992c0 1.814.487 3.516 1.338 4.983L2 22l5.166-1.315A9.96 9.96 0 0011.992 22c5.516 0 9.992-4.476 9.992-9.992C21.984 6.476 17.508 2 11.992 2zm0 18.316a8.292 8.292 0 01-4.221-1.153l-.303-.18-3.067.781.813-2.981-.198-.314A8.324 8.324 0 013.684 11.992c0-4.585 3.731-8.316 8.308-8.316 4.585 0 8.316 3.731 8.316 8.316 0 4.577-3.731 8.324-8.316 8.324z"/>
+                  </svg>
+                  WA
+                </button>
+                <button
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 transition-colors"
+                  onClick={() => handleShareMessenger(off, 'viber')}
+                  title="Κοινοποίηση στο Viber"
+                >
+                  <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M11.992 2C6.476 2 2 6.476 2 11.992c0 2.172.693 4.18 1.864 5.822L2.5 21.5l3.794-1.328A9.956 9.956 0 0011.992 22c5.516 0 9.992-4.476 9.992-9.992C21.984 6.476 17.508 2 11.992 2zm4.9 13.9c-.21.588-.942 1.176-1.596 1.26-.42.042-.966.084-3.108-.672-2.604-.966-4.284-3.612-4.41-3.78-.126-.168-1.05-1.386-1.05-2.646 0-1.26.672-1.89 1.008-2.142.336-.252.714-.336.966-.336.252 0 .462 0 .672.042.21.042.504-.084.798.588.294.672 1.008 2.31 1.092 2.478.084.168.126.378 0 .588-.126.21-.168.336-.336.504-.168.168-.336.378-.462.504-.168.168-.336.378-.168.714.168.336.756 1.26 1.638 2.058 1.134 1.008 2.1 1.344 2.394 1.47.294.126.462.084.63-.084.168-.168.714-.84.882-1.134.168-.294.378-.252.63-.168.252.084 1.638.798 1.932.966.294.168.504.252.588.378.084.168.084.672-.126 1.26z"/>
+                  </svg>
+                  Viber
+                </button>
+                <button
                   className="text-gray-500 hover:text-white p-1.5 rounded-lg hover:bg-surface-700 transition-colors"
                   onClick={() => handlePrint(off)}
                   title={t('offers.print')}
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                  </svg>
+                </button>
+                <button
+                  className="text-gray-500 hover:text-red-300 p-1.5 rounded-lg hover:bg-surface-700 transition-colors"
+                  onClick={() => handleSavePdf(off)}
+                  title={t('offers.savePdf')}
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
                   </svg>
                 </button>
                 <button
@@ -562,7 +650,7 @@ export default function Offers() {
                     </button>
                     {catalog.length > 0 && (
                       <button className="text-xs text-indigo-400 hover:text-indigo-300" onClick={() => { setCatalogSearch(''); setShowCatalog(true) }}>
-                        📦 Από κατάλογο
+                        📦 {i18n.language === 'en' ? 'From catalog' : 'Από κατάλογο'}
                       </button>
                     )}
                   </div>
@@ -697,15 +785,26 @@ export default function Offers() {
               <button className="text-gray-400 hover:text-white text-sm" onClick={closeModal}>{t('offers.cancel')}</button>
               <div className="flex gap-3">
                 {editing && (
-                  <button
-                    className="btn-secondary flex items-center gap-2 text-sm"
-                    onClick={() => handlePrint(editing)}
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
-                    </svg>
-                    {t('offers.print')}
-                  </button>
+                  <>
+                    <button
+                      className="btn-secondary flex items-center gap-2 text-sm"
+                      onClick={() => handlePrint(editing)}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+                      </svg>
+                      {t('offers.print')}
+                    </button>
+                    <button
+                      className="btn-secondary flex items-center gap-2 text-sm"
+                      onClick={() => handleSavePdf(editing)}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+                      </svg>
+                      {t('offers.savePdf')}
+                    </button>
+                  </>
                 )}
                 <button className="btn-primary" onClick={handleSave} disabled={saving || !number.trim()}>
                   {saving ? t('offers.saving') : t('offers.save')}
@@ -721,7 +820,7 @@ export default function Offers() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60">
           <div className="bg-surface-800 border border-surface-600 rounded-2xl w-full max-w-md max-h-[70vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-surface-600">
-              <h3 className="font-semibold">Επιλογή από κατάλογο</h3>
+              <h3 className="font-semibold">{i18n.language === 'en' ? 'Select from catalog' : 'Επιλογή από κατάλογο'}</h3>
               <button className="text-gray-400 hover:text-white" onClick={() => setShowCatalog(false)}>
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -745,7 +844,11 @@ export default function Offers() {
                     key={it.id}
                     className="w-full text-left px-4 py-3 hover:bg-surface-700 border-b border-surface-700 transition-colors flex items-center justify-between"
                     onClick={() => {
-                      setItems(p => [...p, { id: uuid(), description: it.name, quantity: 1, unit_price: it.price, total: it.price }])
+                      const newItem = { id: uuid(), description: it.name, quantity: 1, unit_price: it.price, total: it.price }
+                      setItems(p => {
+                        const isOnlyEmptyLine = p.length === 1 && !p[0].description && p[0].unit_price === 0
+                        return isOnlyEmptyLine ? [newItem] : [...p, newItem]
+                      })
                       setShowCatalog(false)
                     }}
                   >
