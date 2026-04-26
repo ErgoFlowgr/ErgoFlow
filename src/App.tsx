@@ -30,7 +30,7 @@ interface SubscriptionInfo {
   status: string
   daysLeft: number
   trialEnd: string
-  tier: string              // 'basic' | 'pro' | 'pro_plus'
+  tier: string              // 'trial' | 'basic' | 'plus' | 'pro'
   vapiMinutesUsed: number
   vapiPhoneNumber: string | null
 }
@@ -41,8 +41,8 @@ export interface SubscriptionCtx {
   status: string
   vapiMinutesUsed: number
   vapiPhoneNumber: string | null
+  isPlus: boolean
   isPro: boolean
-  isProPlus: boolean
 }
 
 export const SubscriptionContext = createContext<SubscriptionCtx>({
@@ -50,8 +50,8 @@ export const SubscriptionContext = createContext<SubscriptionCtx>({
   status: 'trial',
   vapiMinutesUsed: 0,
   vapiPhoneNumber: null,
+  isPlus: false,
   isPro: false,
-  isProPlus: false,
 })
 
 export default function App() {
@@ -68,13 +68,13 @@ export default function App() {
     try {
       if (!isElectron) {
         // Mobile: subscription gating not implemented yet — allow full access
-        setSubscription({ status: 'active', daysLeft: 999, trialEnd: '', tier: 'pro_plus', vapiMinutesUsed: 0, vapiPhoneNumber: null })
+        setSubscription({ status: 'active', daysLeft: 999, trialEnd: '', tier: 'pro', vapiMinutesUsed: 0, vapiPhoneNumber: null })
         return
       }
       const sub = await ipc.subscriptionCheck()
       setSubscription(sub)
     } catch {
-      setSubscription({ status: 'trial', daysLeft: 30, trialEnd: '', tier: 'basic', vapiMinutesUsed: 0, vapiPhoneNumber: null })
+      setSubscription({ status: 'trial', daysLeft: 30, trialEnd: '', tier: 'trial', vapiMinutesUsed: 0, vapiPhoneNumber: null })
     }
   }
 
@@ -160,8 +160,8 @@ export default function App() {
     status:          subscription?.status ?? 'trial',
     vapiMinutesUsed: subscription?.vapiMinutesUsed ?? 0,
     vapiPhoneNumber: subscription?.vapiPhoneNumber ?? null,
-    isPro:           ['pro', 'pro_plus'].includes(subscription?.tier ?? ''),
-    isProPlus:       subscription?.tier === 'pro_plus',
+    isPlus:          ['plus', 'pro'].includes(subscription?.tier ?? ''),
+    isPro:           subscription?.tier === 'pro',
   }
 
   return (
@@ -191,10 +191,10 @@ export default function App() {
           <Route path="/offers"    element={<Offers />} />
           <Route path="/invoices"  element={<Invoices />} />
           <Route path="/inventory" element={<Inventory />} />
-          <Route path="/calls"     element={<LockedFeature requiredTier="pro_plus"><Calls /></LockedFeature>} />
+          <Route path="/calls"     element={<LockedFeature requiredTier="pro"><Calls /></LockedFeature>} />
           <Route path="/customers" element={<Customers />} />
           <Route path="/customers/:id" element={<CustomerProfile />} />
-          <Route path="/chat"      element={<LockedFeature requiredTier="pro"><Chat /></LockedFeature>} />
+          <Route path="/chat"      element={<LockedFeature requiredTier="plus"><Chat /></LockedFeature>} />
           <Route path="/settings"  element={<Settings />} />
         </Routes>
       </Layout>

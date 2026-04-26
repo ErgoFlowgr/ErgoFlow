@@ -537,14 +537,14 @@ ipcMain.handle('subscription:check', async () => {
       const createRes = await net.fetch(`${supaUrl}/rest/v1/subscriptions`, {
         method: 'POST',
         headers: { ...headers, 'Prefer': 'return=representation' },
-        body: JSON.stringify({ user_id: userId, status: 'trial', trial_end: trialEnd, tier: 'pro_plus' }),
+        body: JSON.stringify({ user_id: userId, status: 'trial', trial_end: trialEnd, tier: 'trial' }),
         signal: AbortSignal.timeout(5000),
       })
       if (createRes.ok) {
         const created = await createRes.json() as Array<SubRow>
-        sub = created[0] ?? { status: 'trial', trial_end: trialEnd, tier: 'pro_plus', vapi_minutes_used: 0, vapi_phone_number: null }
+        sub = created[0] ?? { status: 'trial', trial_end: trialEnd, tier: 'trial', vapi_minutes_used: 0, vapi_phone_number: null }
       } else {
-        sub = { status: 'trial', trial_end: trialEnd, tier: 'pro_plus', vapi_minutes_used: 0, vapi_phone_number: null }
+        sub = { status: 'trial', trial_end: trialEnd, tier: 'trial', vapi_minutes_used: 0, vapi_phone_number: null }
       }
     }
 
@@ -568,7 +568,7 @@ ipcMain.handle('subscription:check', async () => {
     const message = err instanceof Error ? err.message : String(err)
     console.error('subscription:check error:', message)
     // On error, default to trial with full access so the app doesn't block
-    return { status: 'trial', daysLeft: 30, trialEnd: new Date(Date.now() + 30 * 86400_000).toISOString(), tier: 'pro_plus', vapiMinutesUsed: 0, vapiPhoneNumber: null }
+    return { status: 'trial', daysLeft: 30, trialEnd: new Date(Date.now() + 30 * 86400_000).toISOString(), tier: 'trial', vapiMinutesUsed: 0, vapiPhoneNumber: null }
   }
 })
 

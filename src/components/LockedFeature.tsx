@@ -1,26 +1,22 @@
 import { useSubscription } from '../App'
 
 interface Props {
-  requiredTier: 'pro' | 'pro_plus'
+  requiredTier: 'plus' | 'pro'
   children: React.ReactNode
 }
 
 const TIER_LABELS: Record<string, string> = {
-  pro:      'Pro (€39/μήνα)',
-  pro_plus: 'Pro+ (€99/μήνα)',
+  plus: 'Plus (€39/μήνα)',
+  pro:  'Pro (€99/μήνα)',
 }
 
-/**
- * Wraps a page/section and shows a locked state if the user doesn't have the required tier.
- * During trial, all features are accessible.
- */
 export default function LockedFeature({ requiredTier, children }: Props) {
   const { tier, status } = useSubscription()
 
-  // Trial gets full access
-  if (status === 'trial') return <>{children}</>
+  // Trial and trial-tier users get full access
+  if (status === 'trial' || tier === 'trial') return <>{children}</>
 
-  const tiers = ['basic', 'pro', 'pro_plus']
+  const tiers = ['basic', 'plus', 'pro']
   const userLevel     = tiers.indexOf(tier)
   const requiredLevel = tiers.indexOf(requiredTier)
 
