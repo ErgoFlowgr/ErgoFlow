@@ -119,6 +119,7 @@ app.whenReady().then(async () => {
     })
     autoUpdater.on('error', (err) => {
       console.error('Auto-updater error:', err.message)
+      mainWindow?.webContents.send('update:error', err.message)
     })
     setTimeout(() => { autoUpdater.checkForUpdates().catch(() => {}) }, 3000)
   }

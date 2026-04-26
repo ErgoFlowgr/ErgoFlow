@@ -34,6 +34,7 @@ interface ElectronAPI {
   subscriptionCheck: () => Promise<{ status: string; daysLeft: number; trialEnd: string; tier: string; vapiMinutesUsed: number; vapiPhoneNumber: string | null }>
   update: {
     onReady: (cb: () => void) => void
+    onError: (cb: (msg: string) => void) => void
     install:  () => Promise<void>
   }
   on:  (channel: string, cb: (...args: unknown[]) => void) => void

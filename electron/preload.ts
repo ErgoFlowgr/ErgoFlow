@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('electron', {
   // Auto-updater
   update: {
     onReady: (cb: () => void) => ipcRenderer.on('update:ready', () => cb()),
+    onError: (cb: (msg: string) => void) => ipcRenderer.on('update:error', (_e, msg) => cb(msg)),
     install:  () => ipcRenderer.invoke('update:install'),
   },
 

@@ -61,6 +61,8 @@ export default function App() {
   const [onboarded, setOnboarded] = useState(false)
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null)
   const [, setSyncKey] = useState(0)
+  const [updateReady, setUpdateReady] = useState(false)
+  const [updateError, setUpdateError] = useState<string | null>(null)
 
   const checkSubscription = async () => {
     try {
@@ -102,6 +104,11 @@ export default function App() {
       }
     }
     init()
+
+    if (isElectron) {
+      ipc.update.onReady(() => setUpdateReady(true))
+      ipc.update.onError((msg) => setUpdateError(msg))
+    }
 
     if (!isElectron) {
       const onSync = () => setSyncKey(k => k + 1)
@@ -159,6 +166,23 @@ export default function App() {
 
   return (
     <SubscriptionContext.Provider value={subCtx}>
+      {updateReady && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 bg-brand-600 text-white text-sm px-4 py-3 rounded-xl shadow-lg">
+          <span>Νέα έκδοση έτοιμη</span>
+          <button
+            onClick={() => ipc.update.install()}
+            className="bg-white text-brand-700 font-medium px-3 py-1 rounded-lg hover:bg-brand-50 transition-colors"
+          >
+            Εγκατάσταση
+          </button>
+        </div>
+      )}
+      {updateError && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 bg-red-600 text-white text-sm px-4 py-3 rounded-xl shadow-lg max-w-sm">
+          <span className="truncate">Σφάλμα ενημέρωσης: {updateError}</span>
+          <button onClick={() => setUpdateError(null)} className="shrink-0 opacity-70 hover:opacity-100">✕</button>
+        </div>
+      )}
       <Layout onSignOut={handleSignOut} trialDaysLeft={trialDaysLeft}>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
