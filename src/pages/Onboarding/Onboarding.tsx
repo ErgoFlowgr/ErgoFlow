@@ -23,9 +23,10 @@ export default function Onboarding({ onComplete }: Props) {
   const [workType, setWorkType]           = useState('')
   const [selectedCats, setSelectedCats]   = useState<string[]>(DEFAULT_CATEGORIES.map(c => c.name_en))
   const [claudeKey, setClaudeKey]         = useState('')
+  const [syncEnabled, setSyncEnabled]     = useState(false)
   const [saving, setSaving]               = useState(false)
 
-  const TOTAL_STEPS = 4
+  const TOTAL_STEPS = 5
 
   const workTypes = [
     { key: 'heating',      label: t('onboarding.heating') },
@@ -52,6 +53,7 @@ export default function Onboarding({ onComplete }: Props) {
       phone,
       work_type: workType,
       onboarding_complete: 1,
+      sync_enabled: syncEnabled ? 1 : 0,
     })
 
     for (const cat of DEFAULT_CATEGORIES.filter(c => selectedCats.includes(c.name_en))) {

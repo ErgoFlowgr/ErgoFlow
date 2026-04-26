@@ -111,6 +111,17 @@ export default function SettingsPage() {
 
   const update = (patch: Partial<Settings>) => setSettings(p => p ? { ...p, ...patch } : p)
 
+  const handleSyncToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const enabled = e.target.checked ? 1 : 0
+    await saveSettings({ sync_enabled: enabled })
+    update({ sync_enabled: enabled })
+    if (enabled) {
+      if (isElectron) await ipc.syncEnable()
+      else await syncNow(true)
+      await loadLastSync()
+    }
+  }
+
   if (!settings) return (
     <div className="flex items-center justify-center h-full">
       <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -266,29 +277,45 @@ export default function SettingsPage() {
 
       {/* Sync */}
       <Section title="Συγχρονισμός">
-        <div className="flex items-center justify-between">
+        <label className="flex items-center justify-between py-1 cursor-pointer">
           <div>
-            <p className="text-sm text-gray-300">Τελευταία ενημέρωση</p>
+            <span className="text-sm text-gray-300">Συγχρονισμός δεδομένων</span>
             <p className="text-xs text-gray-500 mt-0.5">
-              {lastSyncAt ? new Date(lastSyncAt).toLocaleString('el-GR') : 'Δεν έχει γίνει ακόμη'}
+              {settings.sync_enabled ? 'Τα δεδομένα συγχρονίζονται με το cloud' : 'Τα δεδομένα αποθηκεύονται τοπικά'}
             </p>
           </div>
-          <button
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              syncStatus === 'syncing' ? 'bg-brand-500/20 text-brand-400 cursor-not-allowed' :
-              syncStatus === 'ok' ? 'bg-emerald-500/20 text-emerald-400' :
-              syncStatus === 'error' ? 'bg-red-500/20 text-red-400' :
-              'bg-brand-500 text-white hover:bg-brand-600'
-            }`}
-            disabled={syncStatus === 'syncing'}
-            onClick={handleSyncNow}
-          >
-            {syncStatus === 'syncing' ? 'Συγχρονισμός...' :
-             syncStatus === 'ok' ? '✓ Ολοκληρώθηκε' :
-             syncStatus === 'error' ? '✗ Σφάλμα' :
-             'Συγχρονισμός τώρα'}
-          </button>
-        </div>
+          <input
+            type="checkbox"
+            checked={!!settings.sync_enabled}
+            onChange={handleSyncToggle}
+            className="w-4 h-4 accent-brand-500 cursor-pointer"
+          />
+        </label>
+        {!!settings.sync_enabled && (
+          <div className="flex items-center justify-between pt-2 border-t border-surface-600">
+            <div>
+              <p className="text-sm text-gray-300">Τελευταία ενημέρωση</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {lastSyncAt ? new Date(lastSyncAt).toLocaleString('el-GR') : 'Δεν έχει γίνει ακόμη'}
+              </p>
+            </div>
+            <button
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                syncStatus === 'syncing' ? 'bg-brand-500/20 text-brand-400 cursor-not-allowed' :
+                syncStatus === 'ok' ? 'bg-emerald-500/20 text-emerald-400' :
+                syncStatus === 'error' ? 'bg-red-500/20 text-red-400' :
+                'bg-brand-500 text-white hover:bg-brand-600'
+              }`}
+              disabled={syncStatus === 'syncing'}
+              onClick={handleSyncNow}
+            >
+              {syncStatus === 'syncing' ? 'Συγχρονισμός...' :
+               syncStatus === 'ok' ? '✓ Ολοκληρώθηκε' :
+               syncStatus === 'error' ? '✗ Σφάλμα' :
+               'Συγχρονισμός τώρα'}
+            </button>
+          </div>
+        )}
         {platform.isMobile && (
           <div className="pt-2 border-t border-surface-600">
             <button
