@@ -51,9 +51,6 @@ function getCalendarDays(year: number, month: number) {
   return days
 }
 
-const STATUSES: Job['status'][] = ['pending', 'in-progress', 'completed', 'cancelled']
-const PRIORITIES: Priority[] = ['low', 'normal', 'high']
-
 function formatDate(d: string | null, locale = 'en-GB') {
   if (!d) return '—'
   return new Date(d).toLocaleDateString(locale, { day: 'numeric', month: 'short', year: 'numeric' })
@@ -101,10 +98,17 @@ export default function Jobs() {
   const location = useLocation()
 
   const load = useCallback(async () => {
-    const [j, c] = await Promise.all([getJobs(), getCustomers()])
-    setJobs(j)
-    setCustomers(c)
-    setLoading(false)
+    try {
+      const [j, c] = await Promise.all([getJobs(), getCustomers()])
+      setJobs(j)
+      setCustomers(c)
+    } catch (e) {
+      console.error('[Jobs] load failed:', e)
+      setJobs([])
+      setCustomers([])
+    } finally {
+      setLoading(false)
+    }
     const state = location.state as { jobId?: string; filterDate?: string } | null
     // Apply date filter if navigated here with a date
     if (state?.filterDate) setDateFilter(state.filterDate)
@@ -642,6 +646,7 @@ export default function Jobs() {
                 <button
                   className="w-full flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium text-gray-400 bg-surface-700 hover:bg-surface-600 hover:text-white rounded-lg transition-colors"
                   onClick={() => {
+                    if (!window.confirm('Να δημιουργηθεί τιμολόγιο για αυτή την εργασία;')) return
                     setShowForm(false)
                     navigate('/invoices', { state: { fromJob: { customer_id: editingJob.customer_id, customer_name: editingJob.customer_name, description: editingJob.description, notes: editingJob.notes, job_id: editingJob.id } } })
                   }}

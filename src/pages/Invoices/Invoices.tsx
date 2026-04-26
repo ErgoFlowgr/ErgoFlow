@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { ipc } from '../../lib/electron'
+import { ipc, isElectron } from '../../lib/electron'
+import { db } from '../../lib/db-driver'
 import { useTranslation } from 'react-i18next'
 import {
   getInvoices, getInvoiceItems, getNextInvoiceNumber, upsertInvoice, deleteInvoice,
@@ -181,7 +182,8 @@ ${inv.mydata_mark ? `<div style="margin-bottom:14px;padding:8px 14px;border:1px 
 }
 
 async function printInvoice(inv: Invoice, items: InvoiceItem[], settings: Settings | null, customerVat?: string) {
-  await ipc.printInvoice(buildInvoiceHtml(inv, items, settings, customerVat))
+  const html = buildInvoiceHtml(inv, items, settings, customerVat)
+  await ipc.printInvoice(html)
 }
 
 export default function Invoices() {
@@ -370,7 +372,7 @@ export default function Invoices() {
       const invData: Partial<Invoice> & { number: string } = {
         id: editing?.id,
         number: number.trim(),
-        customer_id: customerId || null,
+        customer_id: (customerId && customers.some(c => c.id === customerId)) ? customerId : null,
         customer_name: customerName.trim() || null,
         customer_address: customerAddress || null,
         status,
@@ -451,7 +453,7 @@ export default function Invoices() {
 
     const confirmed = window.confirm(message)
     if (!confirmed) return
-    await ipc.db.run(
+    await db.run(
       `UPDATE invoices SET mydata_status = 'pending', updated_at = datetime('now') WHERE id = ?`,
       [inv.id]
     )
@@ -463,7 +465,7 @@ export default function Invoices() {
   const filters: FilterType[] = ['all', 'draft', 'pending', 'paid']
 
   return (
-    <div className="p-6 h-full overflow-auto">
+    <div className="p-6 h-full overflow-y-auto overflow-x-hidden">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -497,12 +499,12 @@ export default function Invoices() {
       )}
 
       {/* Filter tabs */}
-      <div className="flex gap-1 mb-4 bg-surface-800 rounded-lg p-1 w-fit">
+      <div className="flex flex-wrap gap-1.5 mb-4">
         {filters.map(f => (
           <button
             key={f}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              filter === f ? 'bg-brand-500 text-white' : 'text-gray-400 hover:text-white'
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              filter === f ? 'bg-brand-500 text-white' : 'bg-surface-800 text-gray-400 hover:text-white'
             }`}
             onClick={() => setFilter(f)}
           >
@@ -559,7 +561,7 @@ export default function Invoices() {
           {filtered.map(inv => (
             <div
               key={inv.id}
-              className="bg-surface-800 border border-surface-600 rounded-xl p-4 flex items-center gap-4 hover:border-surface-500 transition-colors cursor-pointer"
+              className="bg-surface-800 border border-surface-600 rounded-xl p-4 flex flex-wrap items-center gap-4 hover:border-surface-500 transition-colors cursor-pointer"
               onClick={() => openEdit(inv)}
             >
               <div className="w-1 self-stretch rounded-full bg-brand-500/40" />
@@ -597,7 +599,7 @@ export default function Invoices() {
                 <p className="font-bold text-sm">{formatCurrency(inv.total)}</p>
                 <p className="text-gray-500 text-xs mt-0.5">{inv.issue_date ?? '—'}</p>
               </div>
-              <div className="flex gap-2 shrink-0" onClick={e => e.stopPropagation()}>
+              <div className="flex flex-wrap gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                 {/* Print */}
                 <button
                   className="text-gray-500 hover:text-white p-1.5 rounded-lg hover:bg-surface-700 transition-colors"
@@ -720,7 +722,7 @@ export default function Invoices() {
                   <button
                     className="text-xs bg-red-500/20 hover:bg-red-500/40 text-red-300 rounded px-3 py-1 transition-colors whitespace-nowrap"
                     onClick={async () => {
-                      await ipc.db.run(
+                      await db.run(
                         `UPDATE invoices SET mydata_status = 'pending', updated_at = datetime('now') WHERE id = ?`,
                         [editing.id]
                       )
@@ -820,8 +822,8 @@ export default function Invoices() {
                     </button>
                   </div>
                 </div>
-                <div className="border border-surface-600 rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
+                <div className="border border-surface-600 rounded-lg overflow-x-auto">
+                  <table className="w-full min-w-[480px] text-sm">
                     <thead className="bg-surface-700">
                       <tr>
                         <th className="text-left px-3 py-2 text-xs text-gray-400 font-medium">{t('invoices.description')}</th>
@@ -880,12 +882,12 @@ export default function Invoices() {
               </div>
 
               {/* Totals + tax */}
-              <div className="flex justify-between items-start gap-4">
-                <div className="flex-1">
+              <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                <div className="w-full sm:flex-1">
                   <label className="block text-xs text-gray-400 mb-1">{t('invoices.notes')}</label>
                   <textarea className="input w-full h-20 resize-none" value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('invoices.notesPlaceholder')} />
                 </div>
-                <div className="w-64 space-y-2 text-sm">
+                <div className="w-full sm:w-64 space-y-2 text-sm">
                   <div className="flex justify-between text-gray-400">
                     <span>{t('invoices.subtotal')}</span>
                     <span>{subtotal.toFixed(2)} €</span>

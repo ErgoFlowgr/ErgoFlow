@@ -1,55 +1,20 @@
-/**
- * AI abstraction — supports Claude (Anthropic) and Ollama (local).
- * Provider is determined by app settings.
- */
-import { ipc } from './electron'
+import { platform } from './platform'
 import { searchChunks, type Customer, type InventoryItem } from './db'
 
 type BraveResult = { web?: { results?: Array<{ title: string; description: string; url: string }> } }
 
-export type AIProvider = 'claude' | 'ollama'
-
 interface AIConfig {
-  provider: AIProvider
-  claudeApiKey?: string
-  ollamaUrl?: string
-  ollamaChatModel?: string
-  ollamaEmbedModel?: string
-  ollamaVisionModel?: string  // Local vision model (e.g. llava) — describes image, then passes to chat model
+  claudeApiKey: string
   allowWebSearch?: boolean
   braveApiKey?: string
-  imageModel?: string  // Claude model used when processing images
-  language?: string    // App language ('el' or 'en') — used for web search locale
+  imageModel?: string
+  language?: string
 }
 
 // ── Embeddings ─────────────────────────────────────────────────────────────
 
-export async function getEmbedding(text: string, config: AIConfig): Promise<number[]> {
-  if (config.provider === 'ollama') {
-    const model = config.ollamaEmbedModel ?? 'nomic-embed-text'
-    const data = await ipc.ollama.embeddings(
-      config.ollamaUrl!,
-      JSON.stringify({ model, prompt: text })
-    )
-    return data.embedding
-  } else {
-    if (!config.claudeApiKey) throw new Error('Claude API key not configured')
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': config.claudeApiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1,
-        messages: [{ role: 'user', content: `Embed: ${text.slice(0, 200)}` }],
-      }),
-    })
-    const data = await res.json() as { content: Array<{ text: string }> }
-    return textToVector(data.content[0]?.text ?? text)
-  }
+export async function getEmbedding(text: string, _config: AIConfig): Promise<number[]> {
+  return textToVector(text)
 }
 
 function textToVector(text: string): number[] {
@@ -64,41 +29,27 @@ function textToVector(text: string): number[] {
 // ── Web Search ─────────────────────────────────────────────────────────────
 
 async function webSearch(query: string, apiKey: string, lang?: string): Promise<string> {
-  const data = await ipc.braveSearch(query, apiKey, lang) as BraveResult
+  // On Electron: routed via IPC to avoid CORS. On mobile: direct fetch.
+  const isElectron = typeof window !== 'undefined' && !!window.electron
+  let data: BraveResult
+  if (isElectron) {
+    data = await window.electron!.braveSearch(query, apiKey, lang) as BraveResult
+  } else {
+    const params = new URLSearchParams({ q: query, count: '5' })
+    if (lang) params.set('country', lang === 'el' ? 'GR' : 'US')
+    const res = await fetch(`https://api.search.brave.com/res/v1/web/search?${params}`, {
+      headers: { 'Accept': 'application/json', 'X-Subscription-Token': apiKey },
+    })
+    data = await res.json() as BraveResult
+  }
   const results = data.web?.results ?? []
   if (results.length === 0) return 'No web results found.'
   return results.map((r, i) => `${i + 1}. ${r.title}\n${r.description}\nSource: ${r.url}`).join('\n\n')
 }
 
-// ── Chat with RAG ──────────────────────────────────────────────────────────
+// ── Claude API call ────────────────────────────────────────────────────────
 
-export async function chatWithRAG(
-  userMessage: string,
-  history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  config: AIConfig
-): Promise<string> {
-  const embedding = await getEmbedding(userMessage, config)
-  const chunks = await searchChunks(embedding, 5)
-  const context = chunks.map(c => c.content).join('\n\n---\n\n')
-
-  const systemPrompt = context
-    ? `You are a helpful assistant for a heating/HVAC repair technician.
-Answer questions about products and repairs using the following product documentation:
-
-${context}
-
-If the answer is not in the documentation, say so clearly.`
-    : `You are a helpful assistant for a heating/HVAC repair technician.
-No product documents have been uploaded yet. Answer from general knowledge.`
-
-  if (config.provider === 'ollama') {
-    return chatOllama(userMessage, history, systemPrompt, config.ollamaUrl!, config.ollamaChatModel)
-  } else {
-    return chatClaude(userMessage, history, systemPrompt, config.claudeApiKey!)
-  }
-}
-
-async function chatClaude(
+async function callClaude(
   message: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   system: string,
@@ -136,30 +87,28 @@ async function chatClaude(
   return data.content[0]?.text ?? ''
 }
 
-async function chatOllama(
-  message: string,
-  history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  system: string,
-  ollamaUrl: string,
-  model = 'qwen2.5:latest',
-  imageBase64?: string
-): Promise<string> {
-  const userMsg: Record<string, unknown> = { role: 'user', content: message }
-  if (imageBase64) userMsg.images = [imageBase64]
+// ── Chat with RAG ──────────────────────────────────────────────────────────
 
-  const data = await ipc.ollama.chat(
-    ollamaUrl,
-    JSON.stringify({
-      model,
-      stream: false,
-      messages: [
-        { role: 'system', content: system },
-        ...history.slice(-10),
-        userMsg,
-      ],
-    })
-  )
-  return data.message.content
+export async function chatWithRAG(
+  userMessage: string,
+  history: Array<{ role: 'user' | 'assistant'; content: string }>,
+  config: AIConfig
+): Promise<string> {
+  const embedding = await getEmbedding(userMessage, config)
+  const chunks = await searchChunks(embedding, 5)
+  const context = chunks.map(c => c.content).join('\n\n---\n\n')
+
+  const systemPrompt = context
+    ? `You are a helpful assistant for a heating/HVAC repair technician.
+Answer questions about products and repairs using the following product documentation:
+
+${context}
+
+If the answer is not in the documentation, say so clearly.`
+    : `You are a helpful assistant for a heating/HVAC repair technician.
+No product documents have been uploaded yet. Answer from general knowledge.`
+
+  return callClaude(userMessage, history, systemPrompt, config.claudeApiKey)
 }
 
 // ── Chat with Actions (job creation / editing via AI) ──────────────────────
@@ -169,25 +118,22 @@ export interface AIAction {
   title?: string
   customer_name?: string
   customer_id?: string | null
-  scheduled_date?: string   // YYYY-MM-DD
+  scheduled_date?: string
   description?: string
   priority?: 'low' | 'normal' | 'high'
   notes?: string
-  job_id?: string           // for update_job
+  job_id?: string
   status?: string
-  query?: string            // for download_pdfs
-  urls?: Array<{ name: string; url: string }>  // for download_pdfs
-  scrape_url?: string       // for scrape_page
-  // create_offer fields
+  query?: string
+  urls?: Array<{ name: string; url: string }>
+  scrape_url?: string
   offer_items?: Array<{ description: string; quantity: number; unit_price: number }>
   tax_rate?: number
-  // add_inventory_item fields
   item_name?: string
   item_code?: string
   item_unit?: string
   item_price?: number
   item_notes?: string
-  // create_customer fields
   contact_name?: string
   contact_phone?: string
   contact_email?: string
@@ -196,14 +142,11 @@ export interface AIAction {
 }
 
 export interface AIActionResult {
-  text: string              // clean text without the action block
+  text: string
   action?: AIAction
-  usedCloudFallback?: boolean  // true when Ollama was offline and Claude was used instead
 }
 
-/** Parse <action>...</action> block from AI response */
 function parseAction(raw: string): AIActionResult {
-  // Primary: look for <action>...</action> tags
   const match = raw.match(/<action>([\s\S]*?)<\/action>/i)
   if (match) {
     const text = raw.replace(/<action>[\s\S]*?<\/action>/i, '').trim()
@@ -214,7 +157,6 @@ function parseAction(raw: string): AIActionResult {
       return { text }
     }
   }
-  // Fallback: detect JSON code blocks that look like action objects
   const codeBlockMatch = raw.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/i)
   if (codeBlockMatch) {
     try {
@@ -247,7 +189,6 @@ export async function chatWithActions(
     ? customers.map(c => `  - ${c.name} (id: ${c.id}${c.phone ? ', phone: ' + c.phone : ''})`).join('\n')
     : '  (no customers yet)'
 
-  // Detect PDF intent to do a dedicated filetype:pdf search
   const pdfIntent = /pdf|manual|εγχειρίδιο|οδηγ|download|κατέβα/i.test(userMessage)
 
   let webResults = ''
@@ -259,7 +200,6 @@ export async function chatWithActions(
     }
   }
 
-  // Extract only .pdf URLs from search results for the AI to use
   const extractPdfUrls = (text: string) =>
     [...text.matchAll(/https?:\/\/[^\s)]+\.pdf/gi)].map(m => m[0])
   const foundPdfUrls = [...new Set([...extractPdfUrls(webResults), ...extractPdfUrls(pdfResults)])]
@@ -343,44 +283,8 @@ IMPORTANT — When the user shares an image of a product, label, or box and want
 
 Only include ONE <action> block per response. Never include it for questions or general chat. NEVER say "Here's the action block" or describe the block — just include it.`
 
-  let raw: string
-  let usedCloudFallback = false
-
-  if (config.provider === 'ollama') {
-    try {
-      let messageToSend = userMessage
-      let imageForChat = imageBase64
-
-      // Two-step vision: use vision model to describe image, then pass description to reasoning model
-      if (imageBase64 && config.ollamaVisionModel) {
-        const visionResult = await ipc.ollama.chat(
-          config.ollamaUrl!,
-          JSON.stringify({
-            model: config.ollamaVisionModel,
-            stream: false,
-            messages: [{ role: 'user', content: 'Describe this image in detail. Extract all visible text, numbers, product names, model codes, labels, and any other relevant information.', images: [imageBase64] }],
-          })
-        )
-        const imageDescription = visionResult.message.content
-        messageToSend = `${userMessage}\n\n[Image description from vision model: ${imageDescription}]`
-        imageForChat = undefined  // don't pass raw image to reasoning model
-      }
-
-      raw = await chatOllama(messageToSend, history, systemPrompt, config.ollamaUrl!, config.ollamaChatModel, imageForChat)
-    } catch {
-      // Ollama unreachable (offline or mobile) — fall back to Claude if key available
-      if (config.claudeApiKey) {
-        raw = await chatClaude(userMessage, history, systemPrompt, config.claudeApiKey, imageBase64, imageMimeType, config.imageModel)
-        usedCloudFallback = true
-      } else {
-        throw new Error('Ollama is offline and no Claude API key is configured as fallback.')
-      }
-    }
-  } else {
-    raw = await chatClaude(userMessage, history, systemPrompt, config.claudeApiKey!, imageBase64, imageMimeType, config.imageModel)
-  }
-
-  return { ...parseAction(raw), usedCloudFallback }
+  const raw = await callClaude(userMessage, history, systemPrompt, config.claudeApiKey, imageBase64, imageMimeType, config.imageModel)
+  return parseAction(raw)
 }
 
 // ── Translate job fields ───────────────────────────────────────────────────
@@ -397,53 +301,29 @@ title: ${fields.title}
 description: ${fields.description}
 notes: ${fields.notes}`
 
-  let raw: string
-  if (config.provider === 'ollama') {
-    try {
-      raw = await chatOllama(prompt, [], 'You are a translator. Return only valid JSON.', config.ollamaUrl!, config.ollamaChatModel)
-    } catch {
-      if (config.claudeApiKey) {
-        raw = await chatClaude(prompt, [], 'You are a translator. Return only valid JSON.', config.claudeApiKey)
-      } else {
-        throw new Error('Ollama is offline and no Claude API key is configured.')
-      }
-    }
-  } else {
-    raw = await chatClaude(prompt, [], 'You are a translator. Return only valid JSON.', config.claudeApiKey!)
-  }
-
+  const raw = await callClaude(prompt, [], 'You are a translator. Return only valid JSON.', config.claudeApiKey)
   const jsonMatch = raw.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error('Invalid translation response')
   return JSON.parse(jsonMatch[0]) as { title: string; description: string; notes: string }
 }
 
-// ── Get config from keychain ───────────────────────────────────────────────
+// ── Build config from stored settings ─────────────────────────────────────
 
 export async function getAIConfig(
-  provider: AIProvider,
-  ollamaUrl?: string,
-  ollamaChatModel?: string,
-  ollamaEmbedModel?: string,
   settingsClaudeKey?: string | null,
   allowWebSearch?: boolean,
   braveApiKey?: string | null,
   imageModel?: string | null,
-  ollamaVisionModel?: string | null,
   language?: string
 ): Promise<AIConfig> {
-  // Always fetch the Claude key — needed as fallback when Ollama is offline (e.g. Android)
   const claudeApiKey =
-    (await ipc.keychain.get('claude_api_key')) ??
+    (await platform.getKeychainValue('claude_api_key')) ??
     settingsClaudeKey ??
-    undefined
+    import.meta.env.VITE_CLAUDE_API_KEY ??
+    ''
 
   return {
-    provider,
     claudeApiKey,
-    ollamaUrl: ollamaUrl ?? 'http://localhost:11434',
-    ollamaChatModel: ollamaChatModel ?? 'qwen2.5:latest',
-    ollamaEmbedModel: ollamaEmbedModel ?? 'nomic-embed-text',
-    ollamaVisionModel: ollamaVisionModel ?? undefined,
     allowWebSearch: allowWebSearch ?? false,
     braveApiKey: braveApiKey ?? undefined,
     imageModel: imageModel ?? 'claude-sonnet-4-6',

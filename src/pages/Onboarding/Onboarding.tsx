@@ -22,9 +22,7 @@ export default function Onboarding({ onComplete }: Props) {
   const [phone, setPhone]                 = useState('')
   const [workType, setWorkType]           = useState('')
   const [selectedCats, setSelectedCats]   = useState<string[]>(DEFAULT_CATEGORIES.map(c => c.name_en))
-  const [aiProvider, setAiProvider]       = useState<'claude' | 'ollama'>('claude')
   const [claudeKey, setClaudeKey]         = useState('')
-  const [ollamaUrl, setOllamaUrl]         = useState('http://localhost:11434')
   const [saving, setSaving]               = useState(false)
 
   const TOTAL_STEPS = 4
@@ -46,17 +44,13 @@ export default function Onboarding({ onComplete }: Props) {
   const finish = async () => {
     setSaving(true)
 
-    // Save API keys to keychain
     await saveToKeychain('claude_api_key', claudeKey)
-    if (aiProvider === 'ollama') await saveToKeychain('ollama_url', ollamaUrl)
 
     await saveSettings({
       owner_name: name,
       company_name: company,
       phone,
       work_type: workType,
-      ai_provider: aiProvider,
-      ollama_url: aiProvider === 'ollama' ? ollamaUrl : undefined,
       onboarding_complete: 1,
     })
 
@@ -171,7 +165,7 @@ export default function Onboarding({ onComplete }: Props) {
             </>
           )}
 
-          {/* Step 4 — Choose AI */}
+          {/* Step 4 — Claude API key */}
           {step === 4 && (
             <>
               <div className="flex items-center gap-3 mb-1">
@@ -184,57 +178,23 @@ export default function Onboarding({ onComplete }: Props) {
               </div>
               <p className="text-gray-400 text-sm mb-6">{t('onboarding.step5Sub')}</p>
 
-              {/* Provider cards */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                {(['claude', 'ollama'] as const).map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setAiProvider(p)}
-                    className={`p-4 rounded-lg border text-left transition-colors duration-150 ${
-                      aiProvider === p
-                        ? 'border-brand-500 bg-brand-500/10'
-                        : 'border-surface-500 hover:border-brand-500/50'
-                    }`}
-                  >
-                    <div className="font-semibold text-sm text-white capitalize">{p === 'claude' ? 'Claude' : 'Ollama'}</div>
-                    <div className="text-xs text-gray-400 mt-1">
-                      {p === 'claude' ? t('onboarding.claudeDesc') : t('onboarding.ollamaDesc')}
-                    </div>
-                  </button>
-                ))}
+              <div>
+                <label className="label">{t('onboarding.claudeKey')}</label>
+                <input
+                  className="input font-mono text-sm"
+                  type="password"
+                  value={claudeKey}
+                  onChange={e => setClaudeKey(e.target.value)}
+                  placeholder="sk-ant-..."
+                />
               </div>
-
-              {aiProvider === 'claude' && (
-                <div>
-                  <label className="label">{t('onboarding.claudeKey')}</label>
-                  <input
-                    className="input font-mono text-sm"
-                    type="password"
-                    value={claudeKey}
-                    onChange={e => setClaudeKey(e.target.value)}
-                    placeholder="sk-ant-..."
-                  />
-                </div>
-              )}
-
-              {aiProvider === 'ollama' && (
-                <div>
-                  <label className="label">{t('onboarding.ollamaUrl')}</label>
-                  <input
-                    className="input font-mono text-sm"
-                    value={ollamaUrl}
-                    onChange={e => setOllamaUrl(e.target.value)}
-                    placeholder="http://localhost:11434"
-                  />
-                </div>
-              )}
 
               <div className="flex gap-3 mt-6">
                 <button className="btn-ghost flex-1 justify-center" onClick={() => setStep(3)}>{t('onboarding.back')}</button>
                 <button
                   className="btn-primary flex-1 justify-center"
                   onClick={finish}
-                  disabled={saving || (aiProvider === 'claude' && !claudeKey)}
+                  disabled={saving || !claudeKey}
                 >
                   {saving ? '...' : t('onboarding.finish')}
                 </button>

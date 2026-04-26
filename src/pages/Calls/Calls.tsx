@@ -12,11 +12,16 @@ export default function Calls() {
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
-    const [c, s, cats] = await Promise.all([getCalls(), getCallStats(), getCategories()])
-    setCalls(c)
-    setStats(s)
-    setCategories(cats)
-    setLoading(false)
+    try {
+      const [c, s, cats] = await Promise.all([getCalls(), getCallStats(), getCategories()])
+      setCalls(c)
+      setStats(s)
+      setCategories(cats)
+    } catch (e) {
+      console.error('[Calls] load failed:', e)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {

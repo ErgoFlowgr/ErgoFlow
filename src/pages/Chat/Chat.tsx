@@ -3,10 +3,25 @@ import { useTranslation } from 'react-i18next'
 import { getChatHistory, clearChatHistory, getDocuments, getSettings, getCustomers, insertChatMessage, updateChatMessage, upsertJob, upsertOffer, upsertCustomer, getNextOfferNumber, upsertInventoryItem, getInventory, uuid, type ChatMessage, type Document, type Customer } from '../../lib/db'
 import { chatWithActions, getAIConfig, type AIAction } from '../../lib/ai'
 import { processPDF } from '../../lib/pdf'
-import { ipc } from '../../lib/electron'
+import { platform } from '../../lib/platform'
 
 // Extend Window for SpeechRecognition (Chromium/Electron)
 declare global {
+  interface SpeechRecognition extends EventTarget {
+    continuous: boolean
+    interimResults: boolean
+    lang: string
+    maxAlternatives: number
+    onresult: ((event: SpeechRecognitionEvent) => void) | null
+    onerror: ((event: Event) => void) | null
+    onend: (() => void) | null
+    start(): void
+    stop(): void
+    abort(): void
+  }
+  interface SpeechRecognitionEvent extends Event {
+    readonly results: SpeechRecognitionResultList
+  }
   interface Window {
     SpeechRecognition?: new () => SpeechRecognition
     webkitSpeechRecognition?: new () => SpeechRecognition
@@ -156,28 +171,32 @@ export default function Chat() {
         await completeAction(msgId, `Job "${action.title}" created`)
 
       } else if (action.type === 'download_pdfs' && action.urls?.length) {
-        const settings = await getSettings()
         let done = 0
         for (const { name, url } of action.urls) {
           setActionCards(prev => prev.map(c => c.msgId === msgId
             ? { ...c, status: 'pending', result: `⬇️ Downloading ${done + 1}/${action.urls!.length}: ${name}` }
             : c))
-          const buffer = await ipc.downloadPdf(url)
+          const buffer = window.electron
+            ? await window.electron.downloadPdf(url)
+            : await fetch(url).then(r => r.arrayBuffer())
           const file = new File([buffer], name, { type: 'application/pdf' })
-          await processPDF(file, settings.ai_provider, settings.ollama_url)
+          await processPDF(file)
           done++
         }
         setDocuments(await getDocuments())
         await completeAction(msgId, `Downloaded ${done} PDF${done !== 1 ? 's' : ''}`)
 
       } else if (action.type === 'scrape_page' && action.scrape_url) {
-        const settings = await getSettings()
         const baseUrl = new URL(action.scrape_url).origin
 
         setActionCards(prev => prev.map(c => c.msgId === msgId ? { ...c, status: 'pending', result: `🔍 Scanning page...` } : c))
 
+        const fetchHtml = (url: string) => window.electron
+          ? window.electron.fetchHtml(url)
+          : fetch(url).then(r => r.text())
+
         // Fetch the listing page
-        const html = await ipc.fetchHtml(action.scrape_url)
+        const html = await fetchHtml(action.scrape_url)
 
         // Extract all .pdf links
         const pdfLinks = [...html.matchAll(/href=["']([^"']*\.pdf[^"']*)/gi)].map(m => {
@@ -201,7 +220,7 @@ export default function Chat() {
           setActionCards(prev => prev.map(c => c.msgId === msgId ? { ...c, status: 'pending', result: `🔍 Checking ${subLinks.length} subpages...` } : c))
           for (const link of subLinks) {
             try {
-              const subHtml = await ipc.fetchHtml(link)
+              const subHtml = await fetchHtml(link)
               const subPdfs = [...subHtml.matchAll(/href=["']([^"']*\.pdf[^"']*)/gi)].map(m => {
                 const href = m[1]
                 return href.startsWith('http') ? href : `${baseUrl}${href.startsWith('/') ? '' : '/'}${href}`
@@ -223,9 +242,11 @@ export default function Chat() {
             ? { ...c, status: 'pending', result: `⬇️ Downloading ${done + 1}/${allPdfLinks.length}: ${name}` }
             : c))
           try {
-            const buffer = await ipc.downloadPdf(pdfUrl)
+            const buffer = window.electron
+              ? await window.electron.downloadPdf(pdfUrl)
+              : await fetch(pdfUrl).then(r => r.arrayBuffer())
             const file = new File([buffer], name, { type: 'application/pdf' })
-            await processPDF(file, settings.ai_provider, settings.ollama_url)
+            await processPDF(file)
             done++
           } catch { /* skip failed downloads */ }
         }
@@ -247,10 +268,10 @@ export default function Chat() {
     setThinking(true)
     try {
       const settings = await getSettings()
-      const config = await getAIConfig(settings.ai_provider, settings.ollama_url, settings.ollama_chat_model, settings.ollama_embed_model, settings.claude_api_key, !!settings.allow_web_search, settings.brave_search_key, settings.image_model, settings.ollama_vision_model, i18n.language)
+      const config = await getAIConfig(settings.claude_api_key, !!settings.allow_web_search, settings.brave_search_key, settings.image_model, i18n.language)
       const history = messages.slice(-10).map(m => ({ role: m.role, content: m.content }))
       const inventoryItems = await getInventory()
-      const { text: reply, action, usedCloudFallback } = await chatWithActions(text, history, config, customers, {
+      const { text: reply, action } = await chatWithActions(text, history, config, customers, {
         companyName: settings.company_name,
         ownerName: settings.owner_name,
         ownerLastName: settings.owner_last_name,
@@ -259,9 +280,7 @@ export default function Chat() {
       }, imgBase64, imgMime, inventoryItems)
 
       const assistantId = uuid()
-      const fullReply = usedCloudFallback
-        ? `⚠️ *Ollama offline — using Cloud AI*\n\n${reply}`
-        : reply
+      const fullReply = reply
       const assistantMsg: ChatMessage = { id: assistantId, role: 'assistant', content: fullReply, created_at: new Date().toISOString() }
       setMessages(p => [...p, assistantMsg])
       await insertChatMessage({ id: assistantMsg.id, role: 'assistant', content: fullReply })
@@ -345,8 +364,7 @@ export default function Chat() {
     if (!file) return
     setUploading(true)
     try {
-      const settings = await getSettings()
-      await processPDF(file, settings.ai_provider, settings.ollama_url)
+      await processPDF(file)
       setDocuments(await getDocuments())
     } catch (err) {
       alert(`PDF error: ${String(err)}`)
@@ -456,78 +474,93 @@ export default function Chat() {
     setListening(true)
   }
 
+  const isMobile = platform.isMobile
+
   return (
-    <div className="flex h-full">
-      {/* Sidebar: documents */}
-      <div className="w-64 border-r border-surface-600 bg-surface-800 flex flex-col">
-        <div className="p-4 border-b border-surface-600">
-          <h2 className="font-semibold text-sm text-gray-300 uppercase tracking-wider mb-3">PDFs</h2>
-          <input ref={fileRef} type="file" accept=".pdf" className="hidden" onChange={uploadPDF} />
-          <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={importContactsCsv} />
+    <div className={`flex h-full ${isMobile ? 'flex-col' : ''}`}>
+      {/* Sidebar / top bar */}
+      <div className={isMobile
+        ? 'border-b border-surface-600 bg-surface-800 p-3'
+        : 'w-64 border-r border-surface-600 bg-surface-800 flex flex-col'
+      }>
+        <input ref={fileRef} type="file" accept=".pdf" className="hidden" onChange={uploadPDF} />
+        <input ref={csvRef} type="file" accept=".csv" className="hidden" onChange={importContactsCsv} />
+
+        {/* Action buttons */}
+        <div className={isMobile ? 'flex gap-2' : 'p-4 border-b border-surface-600'}>
+          {!isMobile && <h2 className="font-semibold text-sm text-gray-300 uppercase tracking-wider mb-3">PDFs</h2>}
           <button
-            className="btn-primary w-full justify-center text-sm mb-2"
+            className={isMobile ? 'btn-primary flex-1 justify-center text-xs py-2' : 'btn-primary w-full justify-center text-sm mb-2'}
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
           >
             {uploading ? (
-              <span className="flex items-center gap-2">
+              <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 border border-white border-t-transparent rounded-full animate-spin" />
-                Uploading...
+                {!isMobile && 'Uploading...'}
               </span>
             ) : (
               <>
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                 </svg>
-                {t('chat.upload')}
+                {isMobile ? 'PDF' : t('chat.upload')}
               </>
             )}
           </button>
           <button
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs font-medium rounded-lg transition-colors"
+            className={isMobile
+              ? 'flex-1 flex items-center justify-center gap-1.5 py-2 bg-surface-700 text-gray-300 text-xs font-medium rounded-lg'
+              : 'w-full flex items-center justify-center gap-2 px-3 py-2 bg-surface-700 hover:bg-surface-600 text-gray-300 text-xs font-medium rounded-lg transition-colors'
+            }
             onClick={() => { setCsvImportResult(null); csvRef.current?.click() }}
             disabled={csvImporting}
           >
             {csvImporting ? (
-              <span className="flex items-center gap-2">
-                <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
-                Εισαγωγή...
-              </span>
+              <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                 </svg>
-                Import Contacts CSV
+                {isMobile ? 'CSV' : 'Εισαγωγή Επαφών CSV'}
               </>
             )}
           </button>
-          {csvImportResult && (
+          {csvImportResult && !isMobile && (
             <p className={`text-xs mt-2 text-center ${csvImportResult.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>
               {csvImportResult}
             </p>
           )}
         </div>
+        {csvImportResult && isMobile && (
+          <p className={`text-xs mt-2 text-center ${csvImportResult.startsWith('✓') ? 'text-green-400' : 'text-red-400'}`}>
+            {csvImportResult}
+          </p>
+        )}
 
-        <div className="flex-1 overflow-auto p-3 space-y-2">
-          {documents.length === 0 ? (
-            <div className="text-center py-8">
-              <p className="text-gray-500 text-xs">{t('chat.noDocuments')}</p>
-              <p className="text-gray-600 text-xs mt-1">{t('chat.noDocumentsSub')}</p>
-            </div>
-          ) : (
-            documents.map(doc => (
-              <div key={doc.id} className="bg-surface-700 rounded-lg p-2.5">
-                <p className="text-xs font-medium truncate">{doc.name}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{doc.page_count ?? '?'} pages</p>
+        {/* Document list — desktop only */}
+        {!isMobile && (
+          <div className="flex-1 overflow-auto p-3 space-y-2">
+            {documents.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-gray-500 text-xs">{t('chat.noDocuments')}</p>
+                <p className="text-gray-600 text-xs mt-1">{t('chat.noDocumentsSub')}</p>
               </div>
-            ))
-          )}
-        </div>
+            ) : (
+              documents.map(doc => (
+                <div key={doc.id} className="bg-surface-700 rounded-lg p-2.5">
+                  <p className="text-xs font-medium truncate">{doc.name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{doc.page_count ?? '?'} pages</p>
+                </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {/* Chat area */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0">
         <div className="p-4 border-b border-surface-600 flex items-center justify-between">
           <h1 className="text-xl font-bold">{t('chat.title')}</h1>
           {messages.length > 0 && (
@@ -616,15 +649,13 @@ export default function Chat() {
         </div>
 
         {/* Input */}
-        <div className="p-4 border-t border-surface-600">
-          {/* Image preview */}
+        <div className="p-3 border-t border-surface-600">
           {imagePreview && (
             <div className="mb-3 flex items-start gap-2">
               <img src={imagePreview} alt="preview" className="h-20 rounded-lg object-cover border border-surface-500" />
               <button
                 className="text-gray-500 hover:text-white mt-1"
                 onClick={() => { setImageBase64(null); setImagePreview(null) }}
-                title="Remove image"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -632,53 +663,84 @@ export default function Chat() {
               </button>
             </div>
           )}
-          <div className="flex gap-3">
-            <input
-              className="input flex-1"
-              placeholder={t('chat.placeholder')}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
-              disabled={thinking}
-            />
-            {/* Camera button */}
-            <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
-            <button
-              className={`px-3 rounded-lg border transition-colors ${
-                imageBase64
-                  ? 'bg-brand-500/20 border-brand-500/50 text-brand-400'
-                  : 'border-surface-600 text-gray-400 hover:text-white hover:bg-surface-700'
-              }`}
-              onClick={openCamera}
-              disabled={thinking}
-              title="Take a photo (business card, product label...)"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-              </svg>
-            </button>
-            {/* Microphone button */}
-            <button
-              className={`px-3 rounded-lg border transition-colors ${
-                listening
-                  ? 'bg-red-500/20 border-red-500/50 text-red-400 animate-pulse'
-                  : 'border-surface-600 text-gray-400 hover:text-white hover:bg-surface-700'
-              }`}
-              onClick={toggleVoice}
-              disabled={thinking}
-              title={listening ? 'Stop listening' : 'Voice input'}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-              </svg>
-            </button>
-            <button className="btn-primary px-5" onClick={send} disabled={thinking || !input.trim()}>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-              </svg>
-            </button>
-          </div>
+          <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={pickImage} />
+          {isMobile ? (
+            /* Mobile: input full-width on top, buttons below */
+            <div className="space-y-2">
+              <textarea
+                className="input w-full resize-none"
+                rows={1}
+                placeholder={t('chat.placeholder')}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), send())}
+                disabled={thinking}
+                autoCorrect="on"
+                autoCapitalize="sentences"
+                autoComplete="off"
+                spellCheck={true}
+              />
+              <div className="flex gap-2">
+                <button
+                  className={`p-2.5 rounded-lg border transition-colors ${imageBase64 ? 'bg-brand-500/20 border-brand-500/50 text-brand-400' : 'border-surface-600 text-gray-400'}`}
+                  onClick={openCamera} disabled={thinking}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </button>
+                <button
+                  className={`p-2.5 rounded-lg border transition-colors ${listening ? 'bg-red-500/20 border-red-500/50 text-red-400 animate-pulse' : 'border-surface-600 text-gray-400'}`}
+                  onClick={toggleVoice} disabled={thinking}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                  </svg>
+                </button>
+                <button className="btn-primary flex-1 justify-center" onClick={send} disabled={thinking || !input.trim()}>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                  Αποστολή
+                </button>
+              </div>
+            </div>
+          ) : (
+            /* Desktop: all on one row */
+            <div className="flex gap-3">
+              <input
+                className="input flex-1"
+                placeholder={t('chat.placeholder')}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && !e.shiftKey && send()}
+                disabled={thinking}
+              />
+              <button
+                className={`px-3 rounded-lg border transition-colors ${imageBase64 ? 'bg-brand-500/20 border-brand-500/50 text-brand-400' : 'border-surface-600 text-gray-400 hover:text-white hover:bg-surface-700'}`}
+                onClick={openCamera} disabled={thinking}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
+              <button
+                className={`px-3 rounded-lg border transition-colors ${listening ? 'bg-red-500/20 border-red-500/50 text-red-400 animate-pulse' : 'border-surface-600 text-gray-400 hover:text-white hover:bg-surface-700'}`}
+                onClick={toggleVoice} disabled={thinking}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                </svg>
+              </button>
+              <button className="btn-primary px-5" onClick={send} disabled={thinking || !input.trim()}>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+            </div>
+          )}
         </div>
       </div>
       {/* Camera modal */}

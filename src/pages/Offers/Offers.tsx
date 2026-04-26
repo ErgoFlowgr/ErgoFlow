@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
-import { ipc } from '../../lib/electron'
+import { ipc, isElectron } from '../../lib/electron'
 import { useTranslation } from 'react-i18next'
 import {
   getOffers, getOfferItems, getNextOfferNumber, upsertOffer, deleteOffer,
@@ -166,12 +166,14 @@ ${off.notes ? `<div class="notes-box"><strong>Σημειώσεις / Notes:</str
 }
 
 async function printOffer(off: Offer, items: OfferItem[], settings: Settings | null) {
-  await ipc.printInvoice(await buildOfferHtml(off, items, settings))
+  const html = await buildOfferHtml(off, items, settings)
+  await ipc.printInvoice(html)
 }
 
 async function saveOfferPdf(off: Offer, items: OfferItem[], settings: Settings | null) {
   const html = await buildOfferHtml(off, items, settings)
-  await ipc.savePdf(html, `Προσφορά-${off.number}.pdf`)
+  const name = `Προσφορά-${off.number}`
+  await ipc.savePdf(html, name)
 }
 
 export default function Offers() {
@@ -324,6 +326,8 @@ export default function Offers() {
       await upsertOffer(offData, lineItems)
       await load()
       closeModal()
+    } catch (e) {
+      alert('Σφάλμα αποθήκευσης: ' + String(e))
     } finally {
       setSaving(false)
     }
@@ -383,7 +387,8 @@ export default function Offers() {
     const url = messenger === 'whatsapp'
       ? `whatsapp://send?text=${encoded}`
       : `viber://forward?text=${encoded}`
-    await ipc.openExternal(url)
+    if (isElectron) await ipc.openExternal(url)
+    else window.open(url, '_blank')
   }
 
   const handleCreateJob = async (off: Offer, scheduledDate?: string) => {
@@ -418,7 +423,7 @@ export default function Offers() {
   const filters: FilterType[] = ['all', 'pending', 'accepted', 'rejected']
 
   return (
-    <div className="p-6 h-full overflow-auto">
+    <div className="p-6 h-full overflow-y-auto overflow-x-hidden">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -434,12 +439,12 @@ export default function Offers() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1 mb-4 bg-surface-800 rounded-lg p-1 w-fit">
+      <div className="flex flex-wrap gap-1.5 mb-4">
         {filters.map(f => (
           <button
             key={f}
-            className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
-              filter === f ? 'bg-brand-500 text-white' : 'text-gray-400 hover:text-white'
+            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+              filter === f ? 'bg-brand-500 text-white' : 'bg-surface-800 text-gray-400 hover:text-white'
             }`}
             onClick={() => setFilter(f)}
           >
@@ -462,7 +467,7 @@ export default function Offers() {
           {filtered.map(off => (
             <div
               key={off.id}
-              className="bg-surface-800 border border-surface-600 rounded-xl p-4 flex items-center gap-4 hover:border-surface-500 transition-colors cursor-pointer"
+              className="bg-surface-800 border border-surface-600 rounded-xl p-4 flex flex-wrap items-center gap-4 hover:border-surface-500 transition-colors cursor-pointer"
               onClick={() => openEdit(off)}
             >
               <div className="w-1 self-stretch rounded-full bg-indigo-500/40" />
@@ -479,17 +484,16 @@ export default function Offers() {
                 <p className="font-bold text-sm">{formatCurrency(off.total)}</p>
                 <p className="text-gray-500 text-xs mt-0.5">{off.issue_date ?? '—'}</p>
               </div>
-              <div className="flex gap-2 shrink-0 items-center" onClick={e => e.stopPropagation()}>
+              <div className="flex flex-wrap gap-1.5 shrink-0 items-center" onClick={e => e.stopPropagation()}>
                 <button
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-colors"
                   onClick={() => navigate('/invoices', { state: { fromOffer: { customer_id: off.customer_id, customer_name: off.customer_name, customer_address: off.customer_address, offer_number: off.number, offer_id: off.id } } })}
                   title={t('offers.createInvoiceBtn')}
                 >
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                  {t('offers.createInvoiceBtn')}
                 </button>
                 <button
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-surface-700 text-gray-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
+                  className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-surface-700 text-gray-300 hover:bg-brand-500/20 hover:text-brand-400 transition-colors"
                   onClick={() => { setConfirmJobDate(''); setConfirmJobOffer(off) }}
                   disabled={creatingJob === off.id}
                   title={t('offers.createJob')}
@@ -499,7 +503,6 @@ export default function Offers() {
                   ) : (
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
                   )}
-                  {t('offers.createJob')}
                 </button>
                 <button
                   className="flex items-center gap-1 px-2 py-1.5 rounded-lg text-xs font-medium bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors"
@@ -655,8 +658,8 @@ export default function Offers() {
                     )}
                   </div>
                 </div>
-                <div className="border border-surface-600 rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
+                <div className="border border-surface-600 rounded-lg overflow-x-auto">
+                  <table className="w-full min-w-[480px] text-sm">
                     <thead className="bg-surface-700">
                       <tr>
                         <th className="text-left px-3 py-2 text-xs text-gray-400 font-medium">{t('offers.description')}</th>
@@ -715,12 +718,12 @@ export default function Offers() {
               </div>
 
               {/* Totals + tax */}
-              <div className="flex justify-between items-start gap-4">
-                <div className="flex-1">
+              <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
+                <div className="w-full sm:flex-1">
                   <label className="block text-xs text-gray-400 mb-1">{t('offers.notes')}</label>
                   <textarea className="input w-full h-20 resize-none" value={notes} onChange={e => setNotes(e.target.value)} placeholder={t('offers.notesPlaceholder')} />
                 </div>
-                <div className="w-64 space-y-2 text-sm">
+                <div className="w-full sm:w-64 space-y-2 text-sm">
                   <div className="flex justify-between text-gray-400">
                     <span>{t('offers.subtotal')}</span>
                     <span>{subtotal.toFixed(2)} €</span>

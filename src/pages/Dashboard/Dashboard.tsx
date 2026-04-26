@@ -1,7 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ipc } from '../../lib/electron'
+import { ipc, isElectron } from '../../lib/electron'
+import { db } from '../../lib/db-driver'
 import { getCalls, getCustomers, getCallStats, getJobs, getOffers, type Call, type Job, type Offer } from '../../lib/db'
 
 interface Stats {
@@ -96,35 +97,42 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [companyName, setCompanyName] = useState('')
   const [ownerName, setOwnerName] = useState('')
+  const [hiddenTabs, setHiddenTabs] = useState<string[]>([])
 
   const load = useCallback(async () => {
-    const today = new Date().toISOString().slice(0, 10)
+    try {
+      const today = new Date().toISOString().slice(0, 10)
 
-    const [callStats, calls, customers, settings, allJobs] = await Promise.all([
-      getCallStats(),
-      getCalls(200),
-      getCustomers(),
-      ipc.db.get('SELECT company_name, owner_name FROM settings WHERE id = ?', ['main']) as Promise<{ company_name: string; owner_name: string } | undefined>,
-      getJobs(),
-    ])
+      const [callStats, calls, customers, settings, allJobs] = await Promise.all([
+        getCallStats().catch(() => ({ total: 0, inbound: 0, outbound: 0, missed: 0 })),
+        getCalls(200).catch(() => [] as Call[]),
+        getCustomers().catch(() => []),
+        db.get('SELECT company_name, owner_name, hidden_tabs FROM settings WHERE id = ?', ['main']).catch(() => undefined) as Promise<{ company_name: string; owner_name: string; hidden_tabs: string | null } | undefined>,
+        getJobs().catch(() => [] as Job[]),
+      ])
 
-    const todayCalls  = calls.filter(c => c.started_at?.startsWith(today)).length
-    const todayMissed = calls.filter(c => c.started_at?.startsWith(today) && c.status === 'missed').length
+      const todayCalls  = calls.filter(c => c.started_at?.startsWith(today)).length
+      const todayMissed = calls.filter(c => c.started_at?.startsWith(today) && c.status === 'missed').length
 
-    setStats({ ...callStats, customers: customers.length, todayCalls, todayMissed })
-    setRecentCalls(calls.slice(0, 8))
-    setTodayJobs(allJobs.filter(j => j.scheduled_date === today && j.status !== 'cancelled'))
-    setCompanyName(settings?.company_name ?? 'Ergoflow')
-    setOwnerName(settings?.owner_name ?? '')
-    try { setPendingOffers(await getOffers('pending')) } catch { /* offers table may not exist */ }
-    setLoading(false)
+      setStats({ ...callStats, customers: customers.length, todayCalls, todayMissed })
+      setRecentCalls(calls.slice(0, 8))
+      setTodayJobs(allJobs.filter(j => j.scheduled_date === today && j.status !== 'cancelled'))
+      setCompanyName(settings?.company_name ?? 'Ergoflow')
+      setOwnerName(settings?.owner_name ?? '')
+      try { setHiddenTabs(JSON.parse(settings?.hidden_tabs ?? '[]')) } catch { setHiddenTabs([]) }
+      try { setPendingOffers(await getOffers('pending')) } catch { /* ignore */ }
+    } catch (e) {
+      console.error('[Dashboard]', e)
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => {
     load()
     const interval = setInterval(load, 30_000)
-    ipc.on('sync:complete', load)
-    return () => { clearInterval(interval); ipc.off('sync:complete', load) }
+    if (isElectron) ipc.on('sync:complete', load)
+    return () => { clearInterval(interval); if (isElectron) ipc.off('sync:complete', load) }
   }, [load])
 
   if (loading) {
@@ -134,6 +142,8 @@ export default function Dashboard() {
       </div>
     )
   }
+
+  const hidden = (tab: string) => hiddenTabs.includes(tab)
 
   const now = new Date()
   const hour = now.getHours()
@@ -150,15 +160,15 @@ export default function Dashboard() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        <StatCard icon={<TodayIcon />}  label={t('dashboard.callsToday')}  value={stats.todayCalls}  sub={stats.todayMissed > 0 ? `${stats.todayMissed} ${t('dashboard.missed')}` : undefined} color="bg-brand-500/20 text-brand-400" />
-        <StatCard icon={<PhoneIcon />}  label={t('dashboard.totalCalls')}  value={stats.total}        color="bg-blue-500/20 text-blue-400" />
-        <StatCard icon={<UsersIcon />}  label={t('dashboard.customers')}   value={stats.customers}    color="bg-purple-500/20 text-purple-400" />
-        <StatCard icon={<MissedIcon />} label={t('dashboard.missedCalls')} value={stats.missed}       color="bg-red-500/20 text-red-400" />
-        <StatCard icon={<OffersIcon />} label={t('dashboard.pendingOffers')} value={pendingOffers.length} color="bg-amber-500/20 text-amber-400" />
+        {!hidden('calls') && <StatCard icon={<TodayIcon />}  label={t('dashboard.callsToday')}  value={stats.todayCalls}  sub={stats.todayMissed > 0 ? `${stats.todayMissed} ${t('dashboard.missed')}` : undefined} color="bg-brand-500/20 text-brand-400" />}
+        {!hidden('calls') && <StatCard icon={<PhoneIcon />}  label={t('dashboard.totalCalls')}  value={stats.total}        color="bg-blue-500/20 text-blue-400" />}
+        {!hidden('customers') && <StatCard icon={<UsersIcon />}  label={t('dashboard.customers')}   value={stats.customers}    color="bg-purple-500/20 text-purple-400" />}
+        {!hidden('calls') && <StatCard icon={<MissedIcon />} label={t('dashboard.missedCalls')} value={stats.missed}       color="bg-red-500/20 text-red-400" />}
+        {!hidden('offers') && <StatCard icon={<OffersIcon />} label={t('dashboard.pendingOffers')} value={pendingOffers.length} color="bg-amber-500/20 text-amber-400" />}
       </div>
 
       {/* Today's jobs */}
-      <div className="bg-surface-800 rounded-xl overflow-hidden">
+      {!hidden('jobs') && <div className="bg-surface-800 rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-surface-600">
           <h2 className="text-sm font-semibold text-white">{t('dashboard.todayJobs')}</h2>
           <button
@@ -186,10 +196,10 @@ export default function Dashboard() {
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Pending Offers */}
-      <div className="bg-surface-800 rounded-xl overflow-hidden">
+      {!hidden('offers') && <div className="bg-surface-800 rounded-xl overflow-hidden">
         <div className="flex items-center justify-between px-5 py-4 border-b border-surface-600">
           <h2 className="text-sm font-semibold text-white">{t('dashboard.pendingOffers')}</h2>
           <button onClick={() => navigate('/offers')} className="flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 transition-colors">
@@ -214,12 +224,12 @@ export default function Dashboard() {
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
       {/* Recent calls + quick actions */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Recent calls */}
-        <div className="lg:col-span-2 bg-surface-800 rounded-xl overflow-hidden">
+        {!hidden('calls') && <div className="lg:col-span-2 bg-surface-800 rounded-xl overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-surface-600">
             <h2 className="text-sm font-semibold text-white">{t('dashboard.recentCalls')}</h2>
             <button
@@ -247,7 +257,7 @@ export default function Dashboard() {
               ))}
             </div>
           )}
-        </div>
+        </div>}
 
         {/* Quick actions */}
         <div className="space-y-3">
@@ -266,7 +276,7 @@ export default function Dashboard() {
             </div>
           </button>
 
-          <button
+          {!hidden('calls') && <button
             onClick={() => navigate('/calls')}
             className="w-full flex items-center gap-3 p-4 bg-surface-800 hover:bg-surface-700 rounded-xl text-left transition-colors group"
           >
@@ -277,7 +287,7 @@ export default function Dashboard() {
               <p className="text-sm font-medium text-white">{t('dashboard.viewCalls')}</p>
               <p className="text-xs text-gray-500">{t('dashboard.viewCallsSub')}</p>
             </div>
-          </button>
+          </button>}
 
           <button
             onClick={() => navigate('/customers')}
@@ -292,7 +302,7 @@ export default function Dashboard() {
             </div>
           </button>
 
-          <button
+          {!hidden('chat') && <button
             onClick={() => navigate('/chat')}
             className="w-full flex items-center gap-3 p-4 bg-surface-800 hover:bg-surface-700 rounded-xl text-left transition-colors group"
           >
@@ -303,7 +313,7 @@ export default function Dashboard() {
               <p className="text-sm font-medium text-white">{t('nav.chat')}</p>
               <p className="text-xs text-gray-500">{t('dashboard.askProducts')}</p>
             </div>
-          </button>
+          </button>}
         </div>
       </div>
     </div>

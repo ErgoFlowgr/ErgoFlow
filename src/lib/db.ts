@@ -2,7 +2,8 @@
  * Database helpers — thin wrappers over IPC calls to the main process SQLite.
  * All queries run in the Electron main process; renderer just sends/receives data.
  */
-import { ipc } from './electron'
+import { db } from './db-driver'
+import { submitToMydata } from './mydata'
 import { v4 as uuid } from 'uuid'
 
 export { uuid }
@@ -18,11 +19,6 @@ export interface Settings {
   phone2: string | null
   address: string | null
   work_type: string | null
-  ai_provider: 'claude' | 'ollama'
-  ollama_url: string
-  ollama_chat_model: string
-  ollama_embed_model: string
-  ollama_briefing_model: string
   language: 'el' | 'en'
   onboarding_complete: number
   briefing_time: string
@@ -31,25 +27,24 @@ export interface Settings {
   allow_web_search: number
   brave_search_key: string | null
   hidden_tabs: string | null  // JSON array of tab paths e.g. '["calls","invoices"]'
-  image_model: string | null        // Claude model used for image/vision analysis
-  ollama_vision_model: string | null // Local Ollama vision model (e.g. llava)
+  image_model: string | null
   company_vat: string | null        // ΑΦΜ εταιρείας for myDATA
   mydata_user_id: string | null     // ΑΑΔΕ username (aade-user-id)
   mydata_api_key: string | null     // myDATA Ocp-Apim-Subscription-Key
 }
 
 export async function getSettings(): Promise<Settings> {
-  return ipc.db.get('SELECT * FROM settings WHERE id = ?', ['main']) as Promise<Settings>
+  return db.get('SELECT * FROM settings WHERE id = ?', ['main']) as Promise<Settings>
 }
 
 export async function saveSettings(patch: Partial<Settings>): Promise<void> {
   const cols = Object.keys(patch).filter(k => k !== 'id')
   const sets = cols.map(c => `${c} = ?`).join(', ')
   const vals = cols.map(k => (patch as Record<string, unknown>)[k])
-  await ipc.db.run(`UPDATE settings SET ${sets}, updated_at = datetime('now') WHERE id = 'main'`, vals)
+  await db.run(`UPDATE settings SET ${sets}, updated_at = datetime('now') WHERE id = 'main'`, vals)
   // Queue settings sync so Android can read updated values from Supabase
-  await ipc.db.run(
-    'INSERT INTO sync_queue (table_name, record_id, operation) VALUES (?, ?, ?)',
+  await db.run(
+    'INSERT OR REPLACE INTO sync_queue (table_name, record_id, operation) VALUES (?, ?, ?)',
     ['settings', 'main', 'upsert']
   )
   window.dispatchEvent(new CustomEvent('settings:changed'))
@@ -65,12 +60,12 @@ export interface Category {
 }
 
 export async function getCategories(): Promise<Category[]> {
-  return ipc.db.query('SELECT * FROM categories ORDER BY name_el') as Promise<Category[]>
+  return db.query('SELECT * FROM categories ORDER BY name_el') as Promise<Category[]>
 }
 
 export async function upsertCategory(cat: Omit<Category, 'id'> & { id?: string }): Promise<string> {
   const id = cat.id ?? uuid()
-  await ipc.db.run(
+  await db.run(
     `INSERT INTO categories (id, name_el, name_en, color) VALUES (?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET name_el=excluded.name_el, name_en=excluded.name_en, color=excluded.color, synced=0`,
     [id, cat.name_el, cat.name_en, cat.color]
@@ -80,7 +75,7 @@ export async function upsertCategory(cat: Omit<Category, 'id'> & { id?: string }
 }
 
 export async function deleteCategory(id: string): Promise<void> {
-  await ipc.db.run('DELETE FROM categories WHERE id = ?', [id])
+  await db.run('DELETE FROM categories WHERE id = ?', [id])
   await queueSync('categories', id, 'delete')
 }
 
@@ -110,17 +105,17 @@ export interface Customer {
 export async function getCustomers(search?: string): Promise<Customer[]> {
   if (search) {
     const q = `%${search}%`
-    return ipc.db.query(
+    return db.query(
       'SELECT * FROM customers WHERE name LIKE ? OR phone LIKE ? ORDER BY name',
       [q, q]
     ) as Promise<Customer[]>
   }
-  return ipc.db.query('SELECT * FROM customers ORDER BY name') as Promise<Customer[]>
+  return db.query('SELECT * FROM customers ORDER BY name') as Promise<Customer[]>
 }
 
 export async function upsertCustomer(c: Partial<Customer> & { name: string }): Promise<string> {
   const id = c.id ?? uuid()
-  await ipc.db.run(
+  await db.run(
     `INSERT INTO customers
        (id, name, company_name, coc_number, vat_number, salutation, first_name, last_name,
         phone, mobile, fax, email, address, postal_code, city, country, notes)
@@ -143,21 +138,21 @@ export async function upsertCustomer(c: Partial<Customer> & { name: string }): P
   await queueSync('customers', id, 'upsert')
   // Propagate name change to all linked records
   if (c.id) {
-    await ipc.db.run(`UPDATE jobs     SET customer_name = ?, updated_at = datetime('now'), synced = 0 WHERE customer_id = ?`, [c.name, c.id])
-    await ipc.db.run(`UPDATE offers   SET customer_name = ?, updated_at = datetime('now'), synced = 0 WHERE customer_id = ?`, [c.name, c.id])
-    await ipc.db.run(`UPDATE invoices SET customer_name = ?, updated_at = datetime('now'), synced = 0 WHERE customer_id = ?`, [c.name, c.id])
+    await db.run(`UPDATE jobs     SET customer_name = ?, updated_at = datetime('now'), synced = 0 WHERE customer_id = ?`, [c.name, c.id])
+    await db.run(`UPDATE offers   SET customer_name = ?, updated_at = datetime('now'), synced = 0 WHERE customer_id = ?`, [c.name, c.id])
+    await db.run(`UPDATE invoices SET customer_name = ?, updated_at = datetime('now'), synced = 0 WHERE customer_id = ?`, [c.name, c.id])
   }
   return id
 }
 
 export async function deleteCustomer(id: string): Promise<void> {
-  await ipc.db.run('DELETE FROM customers WHERE id = ?', [id])
+  await db.run('DELETE FROM customers WHERE id = ?', [id])
   await queueSync('customers', id, 'delete')
 }
 
 export async function deleteCustomers(ids: string[]): Promise<void> {
   if (!ids.length) return
-  await ipc.db.bulkDeleteCustomers(ids)
+  await db.bulkDeleteCustomers(ids)
 }
 
 // ── Calls ──────────────────────────────────────────────────────────────────
@@ -181,19 +176,19 @@ export interface Call {
 }
 
 export async function getCalls(limit = 200): Promise<Call[]> {
-  return ipc.db.query(
+  return db.query(
     'SELECT * FROM calls ORDER BY started_at DESC LIMIT ?',
     [limit]
   ) as Promise<Call[]>
 }
 
 export async function deleteCall(id: string): Promise<void> {
-  await ipc.db.run('DELETE FROM calls WHERE id = ?', [id])
+  await db.run('DELETE FROM calls WHERE id = ?', [id])
   await queueSync('calls', id, 'delete')
 }
 
 export async function getCallsByCustomer(customerId: string): Promise<Call[]> {
-  return ipc.db.query(
+  return db.query(
     `SELECT * FROM calls
      WHERE customer_id = ? OR customer_phone = (SELECT phone FROM customers WHERE id = ?)
      ORDER BY started_at DESC`,
@@ -204,10 +199,10 @@ export async function getCallsByCustomer(customerId: string): Promise<Call[]> {
 export async function getCallStats(): Promise<{
   total: number; inbound: number; outbound: number; missed: number
 }> {
-  const total    = (await ipc.db.get('SELECT COUNT(*) as n FROM calls') as { n: number }).n
-  const inbound  = (await ipc.db.get("SELECT COUNT(*) as n FROM calls WHERE direction='inbound'") as { n: number }).n
-  const outbound = (await ipc.db.get("SELECT COUNT(*) as n FROM calls WHERE direction='outbound'") as { n: number }).n
-  const missed   = (await ipc.db.get("SELECT COUNT(*) as n FROM calls WHERE status='missed'") as { n: number }).n
+  const total    = (await db.get('SELECT COUNT(*) as n FROM calls') as { n: number }).n
+  const inbound  = (await db.get("SELECT COUNT(*) as n FROM calls WHERE direction='inbound'") as { n: number }).n
+  const outbound = (await db.get("SELECT COUNT(*) as n FROM calls WHERE direction='outbound'") as { n: number }).n
+  const missed   = (await db.get("SELECT COUNT(*) as n FROM calls WHERE status='missed'") as { n: number }).n
   return { total, inbound, outbound, missed }
 }
 
@@ -222,11 +217,11 @@ export interface Document {
 }
 
 export async function getDocuments(): Promise<Document[]> {
-  return ipc.db.query('SELECT * FROM documents ORDER BY uploaded_at DESC') as Promise<Document[]>
+  return db.query('SELECT * FROM documents ORDER BY uploaded_at DESC') as Promise<Document[]>
 }
 
 export async function insertDocument(doc: Omit<Document, 'uploaded_at'>): Promise<void> {
-  await ipc.db.run(
+  await db.run(
     'INSERT INTO documents (id, name, file_size, page_count) VALUES (?, ?, ?, ?)',
     [doc.id, doc.name, doc.file_size, doc.page_count]
   )
@@ -236,7 +231,7 @@ export async function insertChunks(
   chunks: Array<{ id: string; document_id: string; content: string; embedding: string; chunk_index: number; page_number: number }>
 ): Promise<void> {
   for (const c of chunks) {
-    await ipc.db.run(
+    await db.run(
       'INSERT INTO document_chunks (id, document_id, content, embedding, chunk_index, page_number) VALUES (?, ?, ?, ?, ?, ?)',
       [c.id, c.document_id, c.content, c.embedding, c.chunk_index, c.page_number]
     )
@@ -245,7 +240,7 @@ export async function insertChunks(
 
 export async function searchChunks(queryEmbedding: number[], limit = 5): Promise<Array<{ content: string; chunk_index: number }>> {
   // Cosine similarity in JS (SQLite doesn't have vector ops natively)
-  const rows = await ipc.db.query('SELECT content, embedding, chunk_index FROM document_chunks') as Array<{
+  const rows = await db.query('SELECT content, embedding, chunk_index FROM document_chunks') as Array<{
     content: string; embedding: string; chunk_index: number
   }>
 
@@ -279,22 +274,22 @@ export interface ChatMessage {
 }
 
 export async function getChatHistory(): Promise<ChatMessage[]> {
-  return ipc.db.query('SELECT * FROM chat_messages ORDER BY created_at ASC') as Promise<ChatMessage[]>
+  return db.query('SELECT * FROM chat_messages ORDER BY created_at ASC') as Promise<ChatMessage[]>
 }
 
 export async function insertChatMessage(msg: Omit<ChatMessage, 'created_at'>): Promise<void> {
-  await ipc.db.run(
+  await db.run(
     'INSERT INTO chat_messages (id, role, content) VALUES (?, ?, ?)',
     [msg.id, msg.role, msg.content]
   )
 }
 
 export async function updateChatMessage(id: string, content: string): Promise<void> {
-  await ipc.db.run('UPDATE chat_messages SET content = ? WHERE id = ?', [content, id])
+  await db.run('UPDATE chat_messages SET content = ? WHERE id = ?', [content, id])
 }
 
 export async function clearChatHistory(): Promise<void> {
-  await ipc.db.run('DELETE FROM chat_messages')
+  await db.run('DELETE FROM chat_messages')
 }
 
 // ── Overseer log ───────────────────────────────────────────────────────────
@@ -309,7 +304,7 @@ export interface OverseerEntry {
 }
 
 export async function getOverseerLog(limit = 30): Promise<OverseerEntry[]> {
-  return ipc.db.query(
+  return db.query(
     'SELECT * FROM overseer_log ORDER BY checked_at DESC LIMIT ?',
     [limit]
   ) as Promise<OverseerEntry[]>
@@ -337,18 +332,18 @@ export interface Job {
 
 export async function getJobs(status?: string): Promise<Job[]> {
   if (status) {
-    return ipc.db.query('SELECT * FROM jobs WHERE status = ? ORDER BY scheduled_date ASC, created_at DESC', [status]) as Promise<Job[]>
+    return db.query('SELECT * FROM jobs WHERE status = ? ORDER BY scheduled_date ASC, created_at DESC', [status]) as Promise<Job[]>
   }
-  return ipc.db.query('SELECT * FROM jobs ORDER BY scheduled_date ASC, created_at DESC') as Promise<Job[]>
+  return db.query('SELECT * FROM jobs ORDER BY scheduled_date ASC, created_at DESC') as Promise<Job[]>
 }
 
 export async function getJobsByCustomer(customerId: string): Promise<Job[]> {
-  return ipc.db.query('SELECT * FROM jobs WHERE customer_id = ? ORDER BY created_at DESC', [customerId]) as Promise<Job[]>
+  return db.query('SELECT * FROM jobs WHERE customer_id = ? ORDER BY created_at DESC', [customerId]) as Promise<Job[]>
 }
 
 export async function upsertJob(j: Partial<Job> & { title: string }): Promise<string> {
   const id = j.id ?? uuid()
-  await ipc.db.run(
+  await db.run(
     `INSERT INTO jobs (id, customer_id, customer_name, title, description, status, priority, scheduled_date, completed_date, notes, keep_indefinitely, offer_id, invoice_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
@@ -369,15 +364,15 @@ export async function upsertJob(j: Partial<Job> & { title: string }): Promise<st
 }
 
 export async function deleteJob(id: string): Promise<void> {
-  await ipc.db.run('DELETE FROM jobs WHERE id = ?', [id])
+  await db.run('DELETE FROM jobs WHERE id = ?', [id])
   await queueSync('jobs', id, 'delete')
 }
 
 export async function getJobStats(): Promise<{ total: number; pending: number; inProgress: number; completed: number }> {
-  const total      = (await ipc.db.get('SELECT COUNT(*) as n FROM jobs') as { n: number }).n
-  const pending    = (await ipc.db.get("SELECT COUNT(*) as n FROM jobs WHERE status='pending'") as { n: number }).n
-  const inProgress = (await ipc.db.get("SELECT COUNT(*) as n FROM jobs WHERE status='in-progress'") as { n: number }).n
-  const completed  = (await ipc.db.get("SELECT COUNT(*) as n FROM jobs WHERE status='completed'") as { n: number }).n
+  const total      = (await db.get('SELECT COUNT(*) as n FROM jobs') as { n: number }).n
+  const pending    = (await db.get("SELECT COUNT(*) as n FROM jobs WHERE status='pending'") as { n: number }).n
+  const inProgress = (await db.get("SELECT COUNT(*) as n FROM jobs WHERE status='in-progress'") as { n: number }).n
+  const completed  = (await db.get("SELECT COUNT(*) as n FROM jobs WHERE status='completed'") as { n: number }).n
   return { total, pending, inProgress, completed }
 }
 
@@ -420,20 +415,20 @@ export interface InvoiceItem {
 
 export async function getInvoices(status?: string): Promise<Invoice[]> {
   if (status) {
-    return ipc.db.query('SELECT * FROM invoices WHERE status = ? ORDER BY created_at DESC', [status]) as Promise<Invoice[]>
+    return db.query('SELECT * FROM invoices WHERE status = ? ORDER BY created_at DESC', [status]) as Promise<Invoice[]>
   }
-  return ipc.db.query('SELECT * FROM invoices ORDER BY created_at DESC') as Promise<Invoice[]>
+  return db.query('SELECT * FROM invoices ORDER BY created_at DESC') as Promise<Invoice[]>
 }
 
 export async function getInvoiceItems(invoiceId: string): Promise<InvoiceItem[]> {
-  return ipc.db.query('SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY sort_order', [invoiceId]) as Promise<InvoiceItem[]>
+  return db.query('SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY sort_order', [invoiceId]) as Promise<InvoiceItem[]>
 }
 
 export async function getNextInvoiceNumber(): Promise<string> {
   const year = new Date().getFullYear()
   // Find the highest numeric suffix among existing invoices to avoid duplicates.
   // COUNT(*) would produce gaps/duplicates if any invoices were deleted.
-  const rows = await ipc.db.query(`SELECT number FROM invoices`) as { number: string }[]
+  const rows = await db.query(`SELECT number FROM invoices`) as { number: string }[]
   let maxNum = 0
   for (const row of rows) {
     const m = row.number.match(/(\d+)$/)
@@ -460,7 +455,7 @@ export async function upsertInvoice(inv: Partial<Invoice> & { number: string }, 
   const taxAmount = afterDiscount * taxRate / 100
   const total = afterDiscount + taxAmount
 
-  await ipc.db.run(
+  await db.run(
     `INSERT INTO invoices (id, number, document_type, customer_id, customer_name, customer_address, status, issue_date, due_date, notes, subtotal, discount_type, discount_value, discount_amount, tax_rate, tax_amount, total)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
@@ -477,15 +472,15 @@ export async function upsertInvoice(inv: Partial<Invoice> & { number: string }, 
   await queueSync('invoices', id, 'upsert')
 
   // Replace all items
-  const existing = await ipc.db.query('SELECT id FROM invoice_items WHERE invoice_id = ?', [id]) as { id: string }[]
+  const existing = await db.query('SELECT id FROM invoice_items WHERE invoice_id = ?', [id]) as { id: string }[]
   for (const ex of existing) {
-    await ipc.db.run('DELETE FROM invoice_items WHERE id = ?', [ex.id])
+    await db.run('DELETE FROM invoice_items WHERE id = ?', [ex.id])
     await queueSync('invoice_items', ex.id, 'delete')
   }
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const itemId = item.id ?? uuid()
-    await ipc.db.run(
+    await db.run(
       `INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, total, sort_order)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [itemId, id, item.description, item.quantity, item.unit_price, item.total, i]
@@ -504,7 +499,7 @@ export async function submitInvoiceToMydata(inv: Invoice, items: Omit<InvoiceIte
 
   if (!companyVat || !mydataUserId || !mydataApiKey) {
     const err = 'Missing myDATA credentials. Go to Settings → myDATA / ΑΑΔΕ.'
-    await ipc.db.run(
+    await db.run(
       `UPDATE invoices SET mydata_status = 'failed', mydata_error = ?, updated_at = datetime('now') WHERE id = ?`,
       [err, inv.id]
     )
@@ -513,7 +508,7 @@ export async function submitInvoiceToMydata(inv: Invoice, items: Omit<InvoiceIte
 
   let customerVat = ''
   if (inv.customer_id) {
-    const cust = await ipc.db.get('SELECT vat_number FROM customers WHERE id = ?', [inv.customer_id]) as { vat_number?: string } | undefined
+    const cust = await db.get('SELECT vat_number FROM customers WHERE id = ?', [inv.customer_id]) as { vat_number?: string } | undefined
     customerVat = cust?.vat_number ?? ''
   }
 
@@ -522,7 +517,7 @@ export async function submitInvoiceToMydata(inv: Invoice, items: Omit<InvoiceIte
   const total     = inv.total
 
   try {
-    const result = await ipc.mydataSubmit({
+    const result = await submitToMydata({
       invoice: {
         number:        inv.number,
         issue_date:    inv.issue_date ?? null,
@@ -538,14 +533,14 @@ export async function submitInvoiceToMydata(inv: Invoice, items: Omit<InvoiceIte
       mydataApiKey,
     })
     if (result.success && result.mark) {
-      await ipc.db.run(
+      await db.run(
         `UPDATE invoices SET mydata_mark = ?, mydata_status = 'submitted', mydata_error = NULL, updated_at = datetime('now') WHERE id = ?`,
         [result.mark, inv.id]
       )
       return { success: true }
     } else {
       const err = result.error ?? 'Unknown error'
-      await ipc.db.run(
+      await db.run(
         `UPDATE invoices SET mydata_status = 'failed', mydata_error = ?, updated_at = datetime('now') WHERE id = ?`,
         [err, inv.id]
       )
@@ -553,7 +548,7 @@ export async function submitInvoiceToMydata(inv: Invoice, items: Omit<InvoiceIte
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    await ipc.db.run(
+    await db.run(
       `UPDATE invoices SET mydata_status = 'failed', mydata_error = ?, updated_at = datetime('now') WHERE id = ?`,
       [msg, inv.id]
     )
@@ -562,11 +557,11 @@ export async function submitInvoiceToMydata(inv: Invoice, items: Omit<InvoiceIte
 }
 
 export async function deleteInvoice(id: string): Promise<void> {
-  const items = await ipc.db.query('SELECT id FROM invoice_items WHERE invoice_id = ?', [id]) as { id: string }[]
+  const items = await db.query('SELECT id FROM invoice_items WHERE invoice_id = ?', [id]) as { id: string }[]
   for (const it of items) {
     await queueSync('invoice_items', it.id, 'delete')
   }
-  await ipc.db.run('DELETE FROM invoices WHERE id = ?', [id])
+  await db.run('DELETE FROM invoices WHERE id = ?', [id])
   await queueSync('invoices', id, 'delete')
 }
 
@@ -586,14 +581,14 @@ export interface InventoryItem {
 export async function getInventory(search?: string): Promise<InventoryItem[]> {
   if (search) {
     const q = `%${search}%`
-    return ipc.db.query('SELECT * FROM inventory WHERE name LIKE ? OR code LIKE ? ORDER BY name', [q, q]) as Promise<InventoryItem[]>
+    return db.query('SELECT * FROM inventory WHERE name LIKE ? OR code LIKE ? ORDER BY name', [q, q]) as Promise<InventoryItem[]>
   }
-  return ipc.db.query('SELECT * FROM inventory ORDER BY name') as Promise<InventoryItem[]>
+  return db.query('SELECT * FROM inventory ORDER BY name') as Promise<InventoryItem[]>
 }
 
 export async function upsertInventoryItem(item: Partial<InventoryItem> & { name: string }): Promise<string> {
   const id = item.id ?? uuid()
-  await ipc.db.run(
+  await db.run(
     `INSERT INTO inventory (id, name, code, unit, price, notes)
      VALUES (?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
@@ -607,7 +602,7 @@ export async function upsertInventoryItem(item: Partial<InventoryItem> & { name:
 }
 
 export async function deleteInventoryItem(id: string): Promise<void> {
-  await ipc.db.run('DELETE FROM inventory WHERE id = ?', [id])
+  await db.run('DELETE FROM inventory WHERE id = ?', [id])
   await queueSync('inventory', id, 'delete')
 }
 
@@ -645,23 +640,23 @@ export interface OfferItem {
 }
 
 export async function getOffersByCustomer(customerId: string): Promise<Offer[]> {
-  return ipc.db.query('SELECT * FROM offers WHERE customer_id = ? ORDER BY created_at DESC', [customerId]) as Promise<Offer[]>
+  return db.query('SELECT * FROM offers WHERE customer_id = ? ORDER BY created_at DESC', [customerId]) as Promise<Offer[]>
 }
 
 export async function getOffers(status?: string): Promise<Offer[]> {
   if (status) {
-    return ipc.db.query('SELECT * FROM offers WHERE status = ? ORDER BY created_at DESC', [status]) as Promise<Offer[]>
+    return db.query('SELECT * FROM offers WHERE status = ? ORDER BY created_at DESC', [status]) as Promise<Offer[]>
   }
-  return ipc.db.query('SELECT * FROM offers ORDER BY created_at DESC') as Promise<Offer[]>
+  return db.query('SELECT * FROM offers ORDER BY created_at DESC') as Promise<Offer[]>
 }
 
 export async function getOfferItems(offerId: string): Promise<OfferItem[]> {
-  return ipc.db.query('SELECT * FROM offer_items WHERE offer_id = ? ORDER BY sort_order', [offerId]) as Promise<OfferItem[]>
+  return db.query('SELECT * FROM offer_items WHERE offer_id = ? ORDER BY sort_order', [offerId]) as Promise<OfferItem[]>
 }
 
 export async function getNextOfferNumber(): Promise<string> {
   const year = new Date().getFullYear()
-  const count = ((await ipc.db.get('SELECT COUNT(*) as n FROM offers') as { n: number }).n) + 1
+  const count = ((await db.get('SELECT COUNT(*) as n FROM offers') as { n: number }).n) + 1
   return `${year}-${String(count).padStart(3, '0')}`
 }
 
@@ -679,7 +674,7 @@ export async function upsertOffer(off: Partial<Offer> & { number: string }, item
   const taxAmount = afterDiscount * taxRate / 100
   const total = afterDiscount + taxAmount
 
-  await ipc.db.run(
+  await db.run(
     `INSERT INTO offers (id, number, customer_id, customer_name, customer_address, status, issue_date, expiry_date, notes, subtotal, discount_type, discount_value, discount_amount, tax_rate, tax_amount, total)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET
@@ -695,15 +690,15 @@ export async function upsertOffer(off: Partial<Offer> & { number: string }, item
   )
   await queueSync('offers', id, 'upsert')
 
-  const existing = await ipc.db.query('SELECT id FROM offer_items WHERE offer_id = ?', [id]) as { id: string }[]
+  const existing = await db.query('SELECT id FROM offer_items WHERE offer_id = ?', [id]) as { id: string }[]
   for (const ex of existing) {
-    await ipc.db.run('DELETE FROM offer_items WHERE id = ?', [ex.id])
+    await db.run('DELETE FROM offer_items WHERE id = ?', [ex.id])
     await queueSync('offer_items', ex.id, 'delete')
   }
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
     const itemId = item.id ?? uuid()
-    await ipc.db.run(
+    await db.run(
       `INSERT INTO offer_items (id, offer_id, description, quantity, unit_price, total, sort_order)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [itemId, id, item.description, item.quantity, item.unit_price, item.total, i]
@@ -715,19 +710,19 @@ export async function upsertOffer(off: Partial<Offer> & { number: string }, item
 }
 
 export async function deleteOffer(id: string): Promise<void> {
-  const items = await ipc.db.query('SELECT id FROM offer_items WHERE offer_id = ?', [id]) as { id: string }[]
+  const items = await db.query('SELECT id FROM offer_items WHERE offer_id = ?', [id]) as { id: string }[]
   for (const it of items) {
     await queueSync('offer_items', it.id, 'delete')
   }
-  await ipc.db.run('DELETE FROM offers WHERE id = ?', [id])
+  await db.run('DELETE FROM offers WHERE id = ?', [id])
   await queueSync('offers', id, 'delete')
 }
 
 // ── Sync queue ─────────────────────────────────────────────────────────────
 
 async function queueSync(table: string, id: string, op: string): Promise<void> {
-  await ipc.db.run(
-    'INSERT INTO sync_queue (table_name, record_id, operation) VALUES (?, ?, ?)',
+  await db.run(
+    'INSERT OR REPLACE INTO sync_queue (table_name, record_id, operation) VALUES (?, ?, ?)',
     [table, id, op]
   )
 }

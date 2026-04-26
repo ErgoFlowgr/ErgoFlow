@@ -1,4 +1,4 @@
-import { ipc } from '../../lib/electron'
+import { ipc, isElectron } from '../../lib/electron'
 
 // Stripe payment link — replace with the actual URL after Stripe is configured
 const STRIPE_PAYMENT_LINK = 'https://buy.stripe.com/PLACEHOLDER'
@@ -9,7 +9,8 @@ interface PaywallProps {
 
 export default function Paywall({ onRefresh }: PaywallProps) {
   const handleSubscribe = () => {
-    ipc.openExternal(STRIPE_PAYMENT_LINK)
+    if (isElectron) ipc.openExternal(STRIPE_PAYMENT_LINK)
+    else window.open(STRIPE_PAYMENT_LINK, '_blank')
   }
 
   return (

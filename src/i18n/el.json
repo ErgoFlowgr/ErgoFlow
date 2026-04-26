@@ -2,7 +2,7 @@
   "nav": {
     "dashboard": "Πίνακας",
     "jobs": "Εργασίες",
-    "invoices": "Τιμολόγια / Αποδείξεις",
+    "invoices": "Τιμολόγια",
     "offers": "Προσφορές",
     "inventory": "Τιμοκατάλογος",
     "calls": "Κλήσεις",
@@ -296,7 +296,7 @@
     "claudeKey": "Claude API Key",
     "ollamaUrl": "Ollama URL",
     "navigation": "Εμφάνιση Tabs",
-    "navigationHint": "Επιλέξτε ποιες καρτέλες θα εμφανίζονται στην πλαϊνή μπάρα.",
+    "navigationHint": "Επιλέξτε ποιες καρτέλες θα εμφανίζονται στο μενού πλοήγησης.",
     "categories": "Κατηγορίες Κλήσεων",
     "addCategory": "Προσθήκη Κατηγορίας",
     "language": "Γλώσσα",

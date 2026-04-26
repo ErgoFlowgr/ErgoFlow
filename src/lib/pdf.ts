@@ -4,15 +4,13 @@
  */
 import { Buffer } from 'buffer'
 import { uuid, insertDocument, insertChunks, getSettings } from './db'
-import { getEmbedding, getAIConfig, type AIProvider } from './ai'
+import { getEmbedding, getAIConfig } from './ai'
 
 const CHUNK_SIZE = 500   // characters
 const CHUNK_OVERLAP = 50
 
 export async function processPDF(
-  file: File,
-  aiProvider: AIProvider,
-  ollamaUrl?: string
+  file: File
 ): Promise<{ documentId: string; chunkCount: number }> {
   const arrayBuffer = await file.arrayBuffer()
   const buffer = Buffer.from(arrayBuffer)
@@ -29,7 +27,7 @@ export async function processPDF(
 
   // Get AI config for embeddings
   const settings = await getSettings()
-  const config = await getAIConfig(aiProvider, ollamaUrl, settings.ollama_chat_model, settings.ollama_embed_model)
+  const config = await getAIConfig(settings.claude_api_key)
 
   // Store document metadata
   const documentId = uuid()

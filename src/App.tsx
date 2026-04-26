@@ -2,7 +2,14 @@ import { useEffect, useState, createContext, useContext } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getSettings } from './lib/db'
-import { ipc } from './lib/electron'
+import { ipc, isElectron } from './lib/electron'
+import { platform } from './lib/platform'
+import { db } from './lib/db-driver'
+import { syncNow } from './lib/sync-mobile'
+
+function extractUserIdFromJwt(token: string): string | null {
+  try { return (JSON.parse(atob(token.split('.')[1])) as { sub?: string }).sub ?? null } catch { return null }
+}
 import Layout from './components/Layout'
 import Auth from './pages/Auth/Auth'
 import Onboarding from './pages/Onboarding/Onboarding'
@@ -53,39 +60,54 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState(false)
   const [onboarded, setOnboarded] = useState(false)
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null)
+  const [, setSyncKey] = useState(0)
 
   const checkSubscription = async () => {
     try {
+      if (!isElectron) {
+        // Mobile: subscription gating not implemented yet — allow full access
+        setSubscription({ status: 'active', daysLeft: 999, trialEnd: '', tier: 'pro_plus', vapiMinutesUsed: 0, vapiPhoneNumber: null })
+        return
+      }
       const sub = await ipc.subscriptionCheck()
       setSubscription(sub)
     } catch {
-      // On error, allow access — don't block the app
-      setSubscription({ status: 'trial', daysLeft: 30, trialEnd: '' })
+      setSubscription({ status: 'trial', daysLeft: 30, trialEnd: '', tier: 'basic', vapiMinutesUsed: 0, vapiPhoneNumber: null })
     }
   }
 
   useEffect(() => {
     const init = async () => {
-      const token = await ipc.keychain.get('supabase_access_token')
-      if (token) await ipc.db.switch(token)   // switch DB BEFORE reading settings
-      const s = await getSettings()
-      if (s?.language) { i18n.changeLanguage(s.language); document.documentElement.lang = s.language }
-      // If we have a stored token, this is an existing account — always skip onboarding
-      // (local DB may be empty on a new machine; sync will populate it)
-      if (token) {
-        setOnboarded(true)
-        setAuthenticated(true)
-        // Trigger sync now — renderer is ready, so sync:complete will reach page listeners
-        // (startup sync in main process fires before renderer loads, so its event is missed)
-        setTimeout(() => ipc.syncNow(), 1000)
-        // Check subscription status
-        await checkSubscription()
-      } else {
-        setOnboarded(!!s?.onboarding_complete)
+      try {
+        const token = await platform.getToken()
+        if (token) {
+          const userId = token.includes('.') ? extractUserIdFromJwt(token) : token
+          if (userId) await db.switch(userId)
+        }
+        const s = await getSettings()
+        if (s?.language) { i18n.changeLanguage(s.language); document.documentElement.lang = s.language }
+        if (token) {
+          setOnboarded(true)
+          setAuthenticated(true)
+          await checkSubscription()
+          if (isElectron) setTimeout(() => ipc.syncNow(), 1000)
+          else setTimeout(() => syncNow(), 2000)
+        } else {
+          setOnboarded(!!s?.onboarding_complete)
+        }
+      } catch (e) {
+        console.error('[App] init failed:', e)
+      } finally {
+        setReady(true)
       }
-      setReady(true)
     }
     init()
+
+    if (!isElectron) {
+      const onSync = () => setSyncKey(k => k + 1)
+      window.addEventListener('sync:complete', onSync)
+      return () => window.removeEventListener('sync:complete', onSync)
+    }
   }, [i18n])
 
   if (!ready) {
@@ -97,8 +119,8 @@ export default function App() {
   }
 
   const handleSignOut = async () => {
-    await ipc.keychain.delete('supabase_access_token').catch(() => {})
-    await ipc.keychain.delete('supabase_refresh_token').catch(() => {})
+    await platform.clearToken().catch(() => {})
+    await platform.removeKeychainValue('supabase_refresh_token').catch(() => {})
     setAuthenticated(false)
     setOnboarded(false)
   }
@@ -109,6 +131,8 @@ export default function App() {
       setAuthenticated(true)
       if (!isNewAccount) setOnboarded(true)
       await checkSubscription()
+      // Fire sync after pages have mounted — delay gives Android WebView time to stabilize
+      if (!isElectron) setTimeout(() => syncNow(), 2000)
     }} />
   }
 

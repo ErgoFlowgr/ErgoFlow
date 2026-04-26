@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getInventory, upsertInventoryItem, deleteInventoryItem, uuid, type InventoryItem } from '../../lib/db'
+import { getInventory, upsertInventoryItem, deleteInventoryItem, type InventoryItem } from '../../lib/db'
 
 const UNITS_EL = ['τεμ.', 'μ.', 'μ²', 'kg', 'ώρα', 'σετ', 'lt']
 const UNITS_EN = ['pcs', 'm', 'm²', 'kg', 'hr', 'set', 'lt']
