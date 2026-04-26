@@ -5,7 +5,7 @@ import fs from 'fs'
 import os from 'os'
 import { initDatabase, switchDatabase, getDb, cleanupOldPendingJobs } from './db'
 import { storeSecret, getSecret, deleteSecret } from './keychain'
-import { setupSyncWorker, triggerSync, triggerPull } from './sync'
+import { setupSyncWorker, triggerSync, triggerPull, isSyncWorkerRunning } from './sync'
 import { setSessionToken, setRefreshToken } from './session'
 
 const DEV = process.env['NODE_ENV'] === 'development'
@@ -107,7 +107,13 @@ app.whenReady().then(async () => {
   }
 
   createWindow()
-  setupSyncWorker(mainWindow)
+
+  // Only start sync worker if user has opted in
+  try {
+    const syncRow = getDb().prepare("SELECT sync_enabled FROM settings WHERE id = 'main'").get() as { sync_enabled?: number } | undefined
+    if (syncRow?.sync_enabled === 1) setupSyncWorker(mainWindow)
+  } catch { /* DB not ready yet — sync will start via sync:enable IPC if needed */ }
+
   mainWindow?.on('focus', () => triggerPull(mainWindow))
 
   // Auto-updater — only in production builds
@@ -191,6 +197,10 @@ ipcMain.handle('db:switch', (_e, tokenOrUserId: string) => {
 })
 
 ipcMain.handle('sync:now', () => { triggerSync(mainWindow) })
+ipcMain.handle('sync:enable', () => {
+  if (!isSyncWorkerRunning()) setupSyncWorker(mainWindow)
+  triggerSync(mainWindow)
+})
 
 // ── IPC: Notifications ────────────────────────────────────────────────────
 ipcMain.handle('notify', (_e, title: string, body: string) => {

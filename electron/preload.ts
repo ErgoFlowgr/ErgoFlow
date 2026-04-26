@@ -18,7 +18,8 @@ contextBridge.exposeInMainWorld('electron', {
   },
 
   // Sync
-  syncNow: () => ipcRenderer.invoke('sync:now'),
+  syncNow:    () => ipcRenderer.invoke('sync:now'),
+  syncEnable: () => ipcRenderer.invoke('sync:enable'),
 
   // Print
   printInvoice: (html: string) => ipcRenderer.invoke('print:invoice', html),

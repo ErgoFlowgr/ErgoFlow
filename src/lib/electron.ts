@@ -13,7 +13,8 @@ interface ElectronAPI {
     switch: (userId: string) => Promise<void>
     bulkDeleteCustomers: (ids: string[]) => Promise<void>
   }
-  syncNow: () => Promise<void>
+  syncNow:    () => Promise<void>
+  syncEnable: () => Promise<void>
   printInvoice: (html: string) => Promise<void>
   savePdf:      (html: string, defaultName: string) => Promise<{ ok: boolean; filePath?: string }>
   sharePdf:        (html: string, defaultName: string) => Promise<void>

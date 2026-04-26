@@ -36,8 +36,21 @@ const FETCH_TIMEOUT_MS  =   5_000 // abort individual sync fetch calls after 5s
 
 let consecutivePushFailures = 0
 let pushBackoffUntil = 0
+let syncWorkerRunning = false
+
+export function isSyncWorkerRunning() { return syncWorkerRunning }
+
+function isSyncEnabled(): boolean {
+  try {
+    const row = getDb().prepare("SELECT sync_enabled FROM settings WHERE id = 'main'").get() as { sync_enabled?: number } | undefined
+    return (row?.sync_enabled ?? 0) === 1
+  } catch { return false }
+}
 
 export function setupSyncWorker(win: BrowserWindow | null) {
+  if (syncWorkerRunning) return
+  syncWorkerRunning = true
+
   sync(win) // run immediately on startup
   backfillVapiCalls(win) // pull VAPI call history on startup
 
@@ -96,12 +109,14 @@ async function refreshAccessToken(): Promise<string | null> {
 let syncInProgress = false
 
 async function sync(win: BrowserWindow | null) {
+  if (!isSyncEnabled()) return
   if (syncInProgress) return
   syncInProgress = true
   try { await doSync(win) } finally { syncInProgress = false }
 }
 
 async function pushOnly(win: BrowserWindow | null) {
+  if (!isSyncEnabled()) return
   if (syncInProgress) return
   // Back off if Supabase keeps failing
   if (Date.now() < pushBackoffUntil) {
@@ -147,6 +162,7 @@ async function pushOnly(win: BrowserWindow | null) {
 }
 
 async function pullOnly(win: BrowserWindow | null) {
+  if (!isSyncEnabled()) return
   if (syncInProgress) return
   syncInProgress = true
   try {
