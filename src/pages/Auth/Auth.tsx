@@ -71,7 +71,6 @@ export default function Auth({ onAuth }: Props) {
       await storeToken(data.access_token ?? '', data.refresh_token)
       await platform.setKeychainValue('saved_email', signinEmail)
       await platform.setKeychainValue('saved_password', signinPassword)
-      if (isElectron) ipc.syncNow()
       onAuth(false)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)

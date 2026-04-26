@@ -24,7 +24,9 @@ import Offers from './pages/Offers/Offers'
 import Invoices from './pages/Invoices/Invoices'
 import Inventory from './pages/Inventory/Inventory'
 import Paywall from './pages/Paywall/Paywall'
+import VerificationRequired from './pages/Paywall/VerificationRequired'
 import LockedFeature from './components/LockedFeature'
+import { checkLicense } from './lib/license'
 
 interface SubscriptionInfo {
   status: string
@@ -65,17 +67,8 @@ export default function App() {
   const [updateError, setUpdateError] = useState<string | null>(null)
 
   const checkSubscription = async () => {
-    try {
-      if (!isElectron) {
-        // Mobile: subscription gating not implemented yet — allow full access
-        setSubscription({ status: 'active', daysLeft: 999, trialEnd: '', tier: 'pro', vapiMinutesUsed: 0, vapiPhoneNumber: null })
-        return
-      }
-      const sub = await ipc.subscriptionCheck()
-      setSubscription(sub)
-    } catch {
-      setSubscription({ status: 'trial', daysLeft: 30, trialEnd: '', tier: 'trial', vapiMinutesUsed: 0, vapiPhoneNumber: null })
-    }
+    const sub = await checkLicense()
+    setSubscription(sub)
   }
 
   useEffect(() => {
@@ -92,8 +85,10 @@ export default function App() {
           setOnboarded(true)
           setAuthenticated(true)
           await checkSubscription()
-          if (isElectron) setTimeout(() => ipc.syncNow(), 1000)
-          else setTimeout(() => syncNow(), 2000)
+          if (s?.sync_enabled) {
+            if (isElectron) setTimeout(() => ipc.syncNow(), 1000)
+            else setTimeout(() => syncNow(), 2000)
+          }
         } else {
           setOnboarded(!!s?.onboarding_complete)
         }
@@ -138,8 +133,8 @@ export default function App() {
       setAuthenticated(true)
       if (!isNewAccount) setOnboarded(true)
       await checkSubscription()
-      // Fire sync after pages have mounted — delay gives Android WebView time to stabilize
-      if (!isElectron) setTimeout(() => syncNow(), 2000)
+      const freshSettings = await getSettings()
+      if (freshSettings?.sync_enabled && !isElectron) setTimeout(() => syncNow(), 2000)
     }} />
   }
 
@@ -147,7 +142,10 @@ export default function App() {
     return <Onboarding onComplete={() => setOnboarded(true)} />
   }
 
-  // Block access if subscription is expired or cancelled
+  if (subscription?.status === 'verification_required') {
+    return <VerificationRequired onRetry={async () => { await checkSubscription() }} />
+  }
+
   if (subscription && (subscription.status === 'expired' || subscription.status === 'cancelled')) {
     return <Paywall onRefresh={async () => { await checkSubscription() }} />
   }
