@@ -195,8 +195,60 @@ export default function Onboarding({ onComplete }: Props) {
                 <button className="btn-ghost flex-1 justify-center" onClick={() => setStep(3)}>{t('onboarding.back')}</button>
                 <button
                   className="btn-primary flex-1 justify-center"
+                  onClick={() => setStep(5)}
+                >
+                  {t('onboarding.continue')}
+                </button>
+              </div>
+            </>
+          )}
+
+          {/* Step 5 — Sync choice */}
+          {step === 5 && (
+            <>
+              <div className="flex items-center gap-3 mb-1">
+                <div className="w-8 h-8 bg-brand-500/20 rounded-lg flex items-center justify-center">
+                  <svg className="w-4 h-4 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                </div>
+                <h2 className="text-xl font-semibold">Συγχρονισμός δεδομένων</h2>
+              </div>
+              <p className="text-gray-400 text-sm mb-6">
+                Θέλετε τα δεδομένα σας να συγχρονίζονται με το cloud; Μπορείτε να το αλλάξετε αργότερα στις Ρυθμίσεις.
+              </p>
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => setSyncEnabled(false)}
+                  className={`w-full text-left px-4 py-3 rounded-lg border transition-colors duration-150 ${
+                    !syncEnabled
+                      ? 'border-brand-500 bg-brand-500/10 text-white'
+                      : 'border-surface-500 text-gray-300 hover:border-brand-500/50'
+                  }`}
+                >
+                  <div className="font-medium">Τοπικά μόνο</div>
+                  <div className="text-xs text-gray-400 mt-0.5">Τα δεδομένα παραμένουν στη συσκευή σας</div>
+                </button>
+                <button
+                  onClick={() => setSyncEnabled(true)}
+                  className={`w-full text-left px-4 py-3 rounded-lg border transition-colors duration-150 ${
+                    syncEnabled
+                      ? 'border-brand-500 bg-brand-500/10 text-white'
+                      : 'border-surface-500 text-gray-300 hover:border-brand-500/50'
+                  }`}
+                >
+                  <div className="font-medium">Ενεργοποίηση sync</div>
+                  <div className="text-xs text-gray-400 mt-0.5">Συγχρονισμός με το cloud για backup και πολλές συσκευές</div>
+                </button>
+              </div>
+
+              <div className="flex gap-3 mt-6">
+                <button className="btn-ghost flex-1 justify-center" onClick={() => setStep(4)}>{t('onboarding.back')}</button>
+                <button
+                  className="btn-primary flex-1 justify-center"
                   onClick={finish}
-                  disabled={saving || !claudeKey}
+                  disabled={saving}
                 >
                   {saving ? '...' : t('onboarding.finish')}
                 </button>

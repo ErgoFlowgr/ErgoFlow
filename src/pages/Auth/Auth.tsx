@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { getSupabaseConfig, isElectron, ipc } from '../../lib/electron'
+import { getSupabaseConfig } from '../../lib/electron'
 import { platform } from '../../lib/platform'
 import { db } from '../../lib/db-driver'
 
