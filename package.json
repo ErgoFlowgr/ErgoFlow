@@ -1,7 +1,7 @@
 {
   "name": "ergoflow",
   "version": "1.0.2",
-  "description": "Ergoflow — CRM for handworkers with VAPI AI phone assistant",
+  "description": "Ergoflow Craftsmen — CRM for craftsmen with AI assistant",
   "main": "dist-electron/main.js",
   "scripts": {
     "dev": "vite",
@@ -9,7 +9,7 @@
     "start": "node scripts/start-dev.js",
     "build": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "electron:build": "npm run build && npm run build:electron && electron-builder --win && node -e \"const fs=require('fs'),s='C:/Users/Stavros/Desktop/Installers',d='E:/ErgoflowInstaller';fs.mkdirSync(d,{recursive:true});['ErgoflowSetup.exe','ErgoflowSetup.exe.blockmap','latest.yml'].forEach(f=>{fs.copyFileSync(s+'/'+f,d+'/'+f);console.log('Copied:',f)})\"",
+    "electron:build": "npm run build && npm run build:electron && electron-builder --win && node -e \"const fs=require('fs'),s='C:/Users/Stavros/Desktop/Installers',d='E:/ErgoflowInstaller';fs.mkdirSync(d,{recursive:true});['ErgoflowCraftsmenSetup.exe','ErgoflowCraftsmenSetup.exe.blockmap','latest.yml'].forEach(f=>{fs.copyFileSync(s+'/'+f,d+'/'+f);console.log('Copied:',f)})\"",
     "rebuild": "electron-rebuild -f -w better-sqlite3 keytar",
     "preview": "vite preview"
   },
@@ -54,7 +54,7 @@
   },
   "build": {
     "appId": "com.ergoflow.app",
-    "productName": "Ergoflow",
+    "productName": "Ergoflow Craftsmen",
     "directories": {
       "output": "C:/Users/Stavros/Desktop/Installers"
     },
@@ -73,7 +73,7 @@
       "uninstallerIcon": "assets/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "artifactName": "ErgoflowSetup.exe"
+      "artifactName": "ErgoflowCraftsmenSetup.exe"
     },
     "publish": {
       "provider": "github",
