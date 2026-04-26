@@ -4,9 +4,9 @@
  *
  * Required env vars:
  *   STRIPE_WEBHOOK_SECRET   — webhook signing secret from Stripe dashboard
- *   STRIPE_PRICE_BASIC      — Stripe price ID for Βασικό tier
+ *   STRIPE_PRICE_BASIC      — Stripe price ID for Basic tier
+ *   STRIPE_PRICE_PLUS       — Stripe price ID for Plus tier
  *   STRIPE_PRICE_PRO        — Stripe price ID for Pro tier
- *   STRIPE_PRICE_PRO_PLUS   — Stripe price ID for Pro+ tier
  *   SUPABASE_URL
  *   SUPABASE_SERVICE_ROLE_KEY
  */
@@ -14,16 +14,16 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
 const STRIPE_WEBHOOK_SECRET  = Deno.env.get('STRIPE_WEBHOOK_SECRET') ?? ''
 const STRIPE_PRICE_BASIC     = Deno.env.get('STRIPE_PRICE_BASIC') ?? ''
+const STRIPE_PRICE_PLUS      = Deno.env.get('STRIPE_PRICE_PLUS') ?? ''
 const STRIPE_PRICE_PRO       = Deno.env.get('STRIPE_PRICE_PRO') ?? ''
-const STRIPE_PRICE_PRO_PLUS  = Deno.env.get('STRIPE_PRICE_PRO_PLUS') ?? ''
 const SUPABASE_URL           = Deno.env.get('SUPABASE_URL') ?? ''
 const SUPABASE_SRK           = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 
 // Map Stripe price ID → internal tier name
 function tierFromPriceId(priceId: string): string {
-  if (priceId === STRIPE_PRICE_PRO_PLUS) return 'pro_plus'
-  if (priceId === STRIPE_PRICE_PRO)      return 'pro'
-  if (priceId === STRIPE_PRICE_BASIC)    return 'basic'
+  if (priceId === STRIPE_PRICE_PRO)   return 'pro'
+  if (priceId === STRIPE_PRICE_PLUS)  return 'plus'
+  if (priceId === STRIPE_PRICE_BASIC) return 'basic'
   return 'basic'
 }
 
@@ -98,8 +98,8 @@ Deno.serve(async (req: Request) => {
         console.warn('No subscription row found for customer:', stripeCustomerId)
       }
 
-      // If upgrading to Pro+, trigger VAPI provisioning
-      if (tier === 'pro_plus' && sub?.user_id) {
+      // If upgrading to Pro, trigger VAPI provisioning
+      if (tier === 'pro' && sub?.user_id) {
         await provisionVapi(sub.user_id, stripeCustomerId, supabase)
       }
       break
@@ -129,8 +129,8 @@ Deno.serve(async (req: Request) => {
           updated_at:   new Date().toISOString(),
         }).eq('id', sub.id)
 
-        // Newly upgraded to Pro+ and no assistant yet — provision one
-        if (tier === 'pro_plus' && !sub.vapi_assistant_id && sub.user_id) {
+        // Newly upgraded to Pro and no assistant yet — provision one
+        if (tier === 'pro' && !sub.vapi_assistant_id && sub.user_id) {
           await provisionVapi(sub.user_id, stripeCustomerId, supabase)
         }
       }

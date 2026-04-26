@@ -293,6 +293,13 @@ function runMigrations() {
   tryAlter(`ALTER TABLE settings ADD COLUMN company_vat TEXT`)
   tryAlter(`ALTER TABLE settings ADD COLUMN mydata_user_id TEXT`)
   tryAlter(`ALTER TABLE settings ADD COLUMN mydata_api_key TEXT`)
+  // Offline license cache (30-day verification model)
+  tryAlter(`ALTER TABLE settings ADD COLUMN license_verified_at TEXT`)
+  tryAlter(`ALTER TABLE settings ADD COLUMN license_tier TEXT DEFAULT 'basic'`)
+  tryAlter(`ALTER TABLE settings ADD COLUMN license_status TEXT DEFAULT 'trial'`)
+  tryAlter(`ALTER TABLE settings ADD COLUMN license_trial_end TEXT`)
+  // Cloud sync opt-in (default OFF — data stays local)
+  tryAlter(`ALTER TABLE settings ADD COLUMN sync_enabled INTEGER DEFAULT 0`)
 
   // Deduplicate sync_queue (keep newest per table+record) and add unique index
   // This fixes a bug where the same record was queued many times, causing sync hammering

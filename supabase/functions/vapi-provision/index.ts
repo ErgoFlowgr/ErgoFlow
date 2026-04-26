@@ -1,6 +1,6 @@
 /**
  * VAPI Provision Edge Function
- * Called when a customer activates Pro+.
+ * Called when a customer activates Pro.
  * Clones the Gianna template assistant and assigns a phone number.
  *
  * Required env vars:

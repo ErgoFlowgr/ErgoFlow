@@ -31,6 +31,13 @@ export interface Settings {
   company_vat: string | null        // ΑΦΜ εταιρείας for myDATA
   mydata_user_id: string | null     // ΑΑΔΕ username (aade-user-id)
   mydata_api_key: string | null     // myDATA Ocp-Apim-Subscription-Key
+  // Offline license cache
+  license_verified_at: string | null
+  license_tier: string | null
+  license_status: string | null
+  license_trial_end: string | null
+  // Cloud sync opt-in
+  sync_enabled: number
 }
 
 export async function getSettings(): Promise<Settings> {

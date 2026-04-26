@@ -491,7 +491,7 @@ ipcMain.handle('subscription:check', async () => {
     const token   = await getSecret('supabase_access_token')
 
     if (!supaUrl || !supaKey || !token) {
-      return { status: 'trial', daysLeft: 30, trialEnd: new Date(Date.now() + 30 * 86400_000).toISOString() }
+      throw new Error('missing credentials')
     }
 
     // Extract user_id from JWT
@@ -502,7 +502,7 @@ ipcMain.handle('subscription:check', async () => {
     } catch { /* ignore */ }
 
     if (!userId) {
-      return { status: 'trial', daysLeft: 30, trialEnd: new Date(Date.now() + 30 * 86400_000).toISOString() }
+      throw new Error('invalid token')
     }
 
     const headers: Record<string, string> = {
@@ -567,8 +567,7 @@ ipcMain.handle('subscription:check', async () => {
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('subscription:check error:', message)
-    // On error, default to trial with full access so the app doesn't block
-    return { status: 'trial', daysLeft: 30, trialEnd: new Date(Date.now() + 30 * 86400_000).toISOString(), tier: 'trial', vapiMinutesUsed: 0, vapiPhoneNumber: null }
+    throw err  // license.ts handles offline fallback
   }
 })
 

@@ -30,7 +30,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState(false)
   const [claudeKey, setClaudeKey] = useState('')
-  const { isProPlus, vapiPhoneNumber, vapiMinutesUsed } = useSubscription()
+  const { isPro, vapiPhoneNumber, vapiMinutesUsed } = useSubscription()
   const [newCat, setNewCat] = useState('')
   const [newCatColor, setNewCatColor] = useState('#4f6ef7')
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
@@ -157,8 +157,8 @@ export default function SettingsPage() {
         </Field>
       </Section>
 
-      {/* AI Phone Assistant (Pro+ only) */}
-      {isProPlus && (
+      {/* AI Phone Assistant (Pro only) */}
+      {isPro && (
         <Section title="AI Τηλεφωνικός Βοηθός">
           <Field label="Αριθμός Gianna">
             <div className="input bg-surface-700 text-gray-300 select-all font-mono">
