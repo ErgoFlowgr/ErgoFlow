@@ -52,6 +52,11 @@ async function ensureFreshToken(): Promise<string | null> {
 
 export async function syncNow(force = false): Promise<boolean> {
   if (syncInProgress) return false
+  // Respect sync_enabled setting — sync is opt-in
+  try {
+    const row = await db.get(`SELECT sync_enabled FROM settings WHERE id = ?`, ['main']) as { sync_enabled?: number } | undefined
+    if (!row?.sync_enabled) return false
+  } catch { return false }
   syncInProgress = true
   try {
     const token = await ensureFreshToken()
