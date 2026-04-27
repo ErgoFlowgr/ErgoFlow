@@ -125,14 +125,17 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
             </div>
           )}
 
-          {/* Connectivity + backup status */}
-          <div className="flex items-center justify-between text-xs text-gray-500">
-            <div className="flex items-center gap-1.5">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? (syncPulse ? 'bg-accent-green animate-pulse' : 'bg-accent-green') : 'bg-gray-500'}`} />
-              <span>{isOnline ? t('common.online') : t('common.offline')}</span>
-            </div>
-            <span className={syncEnabled ? 'text-brand-500/70' : 'text-gray-600'}>
-              {syncEnabled ? '↑ backup' : 'no backup'}
+          {/* Connectivity — internet up/down */}
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? (syncPulse ? 'bg-accent-green animate-pulse' : 'bg-accent-green') : 'bg-red-500'}`} />
+            <span className={isOnline ? '' : 'text-red-400'}>{isOnline ? t('common.online') : t('common.offline')}</span>
+          </div>
+
+          {/* Cloud backup — independent of connectivity */}
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className={`w-2 h-2 rounded-full shrink-0 ${syncEnabled ? 'bg-brand-500/70' : 'bg-gray-600'}`} />
+            <span className={syncEnabled ? 'text-gray-500' : 'text-gray-600'}>
+              {syncEnabled ? 'Cloud backup ενεργό' : 'Cloud backup ανενεργό'}
             </span>
           </div>
 
