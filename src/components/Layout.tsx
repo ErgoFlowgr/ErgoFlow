@@ -107,19 +107,21 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
 
         <div className="p-3 border-t border-surface-600 space-y-2">
           {/* Subscription tier + trial countdown */}
-          {subscriptionStatus === 'trial' && trialDaysLeft !== null && trialDaysLeft !== undefined ? (
+          {(tier === 'pro' || tier === 'plus') ? (
+            <div className="px-1">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                tier === 'pro' ? 'bg-purple-500/20 text-purple-400' : 'bg-brand-500/20 text-brand-400'
+              }`}>
+                {tier === 'pro' ? 'Pro' : 'Plus'}
+              </span>
+            </div>
+          ) : subscriptionStatus === 'trial' && trialDaysLeft !== null && trialDaysLeft !== undefined ? (
             <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-2.5 py-2 text-xs text-yellow-400">
               <span className="font-medium">Trial</span> · {trialDaysLeft} {trialDaysLeft === 1 ? 'μέρα απομένει' : 'μέρες απομένουν'}
             </div>
           ) : (
             <div className="px-1">
-              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
-                tier === 'pro'  ? 'bg-purple-500/20 text-purple-400' :
-                tier === 'plus' ? 'bg-brand-500/20 text-brand-400' :
-                'bg-surface-600 text-gray-400'
-              }`}>
-                {tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Plus' : 'Basic'}
-              </span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">Basic</span>
             </div>
           )}
 
