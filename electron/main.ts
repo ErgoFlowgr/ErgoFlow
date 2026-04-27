@@ -11,6 +11,11 @@ import { setSessionToken, setRefreshToken } from './session'
 const DEV = process.env['NODE_ENV'] === 'development'
 const DEV_SERVER = `http://127.0.0.1:${process.env['VITE_DEV_PORT'] ?? '5173'}`
 
+// Supabase public credentials — safe to embed (anon key, not service role)
+// VITE_ vars are Vite-only and are NOT available in the Electron main process at runtime
+const SUPA_URL = 'https://ftorwjwcxcgbwwonbcwq.supabase.co'
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ0b3J3andjeGNnYnd3b25iY3dxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NDAwNDgsImV4cCI6MjA4OTQxNjA0OH0.3PhQcZYnisEmANFKEJPfbcg4_FIhqhQnH2Mz-hVx7U8'
+
 let mainWindow: BrowserWindow | null = null
 
 function createWindow() {
@@ -494,10 +499,8 @@ ipcMain.handle('mydata:submit', async (_e, params: {
 //   4. Register the webhook URL in the Stripe dashboard
 ipcMain.handle('subscription:check', async () => {
   try {
-    const envUrl  = process.env['VITE_SUPABASE_URL']
-    const envKey  = process.env['VITE_SUPABASE_ANON_KEY']
-    const supaUrl = envUrl  ?? await getSecret('supabase_url')  ?? ''
-    const supaKey = envKey  ?? await getSecret('supabase_anon_key') ?? ''
+    const supaUrl = process.env['VITE_SUPABASE_URL'] ?? await getSecret('supabase_url') ?? SUPA_URL
+    const supaKey = process.env['VITE_SUPABASE_ANON_KEY'] ?? await getSecret('supabase_anon_key') ?? SUPA_KEY
     const token   = await getSecret('supabase_access_token')
 
     if (!supaUrl || !supaKey || !token) {

@@ -122,7 +122,20 @@ export async function checkLicense(): Promise<LicenseStatus> {
     return { ...fresh, status: fresh.status as LicenseStatus['status'] }
   }
 
-  // Offline and verification overdue — block access
+  // If license_verified_at is null, this is a fresh install or a DB migration that just added
+  // the license columns. Never block on first verification — give trial access and retry next launch.
+  if (verifiedAt === null) {
+    return {
+      status:          'trial',
+      daysLeft:        14,
+      trialEnd:        new Date(Date.now() + 14 * 86400_000).toISOString(),
+      tier:            'basic',
+      vapiMinutesUsed: 0,
+      vapiPhoneNumber: null,
+    }
+  }
+
+  // Previously verified but now overdue and offline — block access
   return {
     status:          'verification_required',
     daysLeft:        0,
