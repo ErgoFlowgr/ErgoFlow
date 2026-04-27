@@ -115,10 +115,22 @@ export default function SettingsPage() {
     const enabled = e.target.checked ? 1 : 0
     await saveSettings({ sync_enabled: enabled })
     update({ sync_enabled: enabled })
+    window.dispatchEvent(new Event('settings:changed'))
     if (enabled) {
-      if (isElectron) await ipc.syncEnable()
-      else await syncNow(true)
-      await loadLastSync()
+      setSyncStatus('syncing')
+      try {
+        if (isElectron) {
+          await ipc.syncEnable()
+        } else {
+          await syncNow(true)
+        }
+        await loadLastSync()
+        setSyncStatus('ok')
+        setTimeout(() => setSyncStatus('idle'), 3000)
+      } catch {
+        setSyncStatus('error')
+        setTimeout(() => setSyncStatus('idle'), 3000)
+      }
     }
   }
 
