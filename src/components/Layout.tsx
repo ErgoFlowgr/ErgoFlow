@@ -40,11 +40,20 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
   const [hiddenTabs, setHiddenTabs] = useState<string[]>([])
   const [updateReady, setUpdateReady] = useState(false)
   const [syncEnabled, setSyncEnabled] = useState(false)
+  const [offlineDaysLeft, setOfflineDaysLeft] = useState<number | null>(null)
 
   const loadHiddenTabs = () => {
     getSettings().then(s => {
       try { setHiddenTabs(JSON.parse(s?.hidden_tabs ?? '[]')) } catch { setHiddenTabs([]) }
       setSyncEnabled(!!s?.sync_enabled)
+      if (s?.license_verified_at) {
+        const verifiedAt = new Date(s.license_verified_at).getTime()
+        const deadline = verifiedAt + 30 * 24 * 60 * 60 * 1000
+        const daysLeft = Math.max(0, Math.ceil((deadline - Date.now()) / (24 * 60 * 60 * 1000)))
+        setOfflineDaysLeft(daysLeft)
+      } else {
+        setOfflineDaysLeft(null)
+      }
     })
   }
 
@@ -130,6 +139,16 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
             <span className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? (syncPulse ? 'bg-accent-green animate-pulse' : 'bg-accent-green') : 'bg-red-500'}`} />
             <span className={isOnline ? '' : 'text-red-400'}>{isOnline ? t('common.online') : t('common.offline')}</span>
           </div>
+
+          {/* Offline verification countdown — shown only when offline */}
+          {!isOnline && offlineDaysLeft !== null && (
+            <div className={`flex items-center gap-1.5 text-xs ${offlineDaysLeft <= 7 ? 'text-red-400' : 'text-yellow-500'}`}>
+              <svg className="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>{offlineDaysLeft} {offlineDaysLeft === 1 ? 'μέρα' : 'μέρες'} για επαλήθευση</span>
+            </div>
+          )}
 
           {/* Cloud backup — shows real state (can't sync when offline) */}
           <div className="flex items-center gap-1.5 text-xs">

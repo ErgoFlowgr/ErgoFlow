@@ -501,11 +501,35 @@ ipcMain.handle('subscription:check', async () => {
   try {
     const supaUrl = process.env['VITE_SUPABASE_URL'] ?? await getSecret('supabase_url') ?? SUPA_URL
     const supaKey = process.env['VITE_SUPABASE_ANON_KEY'] ?? await getSecret('supabase_anon_key') ?? SUPA_KEY
-    const token   = await getSecret('supabase_access_token')
 
-    if (!supaUrl || !supaKey || !token) {
-      throw new Error('missing credentials')
-    }
+    if (!supaUrl || !supaKey) throw new Error('missing supabase config')
+
+    // Get a fresh token — refresh if expired or expiring within 5 minutes
+    let token = await getSecret('supabase_access_token')
+    if (!token) throw new Error('not authenticated')
+
+    try {
+      const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()) as { exp?: number; sub?: string }
+      if ((payload.exp ?? 0) * 1000 < Date.now() + 5 * 60_000) {
+        const refreshToken = await getSecret('supabase_refresh_token')
+        if (refreshToken) {
+          const refreshRes = await net.fetch(`${supaUrl}/auth/v1/token?grant_type=refresh_token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: supaKey },
+            body: JSON.stringify({ refresh_token: refreshToken }),
+            signal: AbortSignal.timeout(5000),
+          })
+          if (refreshRes.ok) {
+            const refreshData = await refreshRes.json() as { access_token?: string; refresh_token?: string }
+            if (refreshData.access_token) {
+              token = refreshData.access_token
+              await storeSecret('supabase_access_token', token)
+              if (refreshData.refresh_token) await storeSecret('supabase_refresh_token', refreshData.refresh_token)
+            }
+          }
+        }
+      }
+    } catch { /* use existing token */ }
 
     // Extract user_id from JWT
     let userId: string | null = null
@@ -514,9 +538,7 @@ ipcMain.handle('subscription:check', async () => {
       userId = payload.sub ?? null
     } catch { /* ignore */ }
 
-    if (!userId) {
-      throw new Error('invalid token')
-    }
+    if (!userId) throw new Error('invalid token')
 
     const headers: Record<string, string> = {
       'apikey': supaKey,
