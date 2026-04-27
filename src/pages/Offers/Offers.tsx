@@ -167,13 +167,23 @@ ${off.notes ? `<div class="notes-box"><strong>Σημειώσεις / Notes:</str
 
 async function printOffer(off: Offer, items: OfferItem[], settings: Settings | null) {
   const html = await buildOfferHtml(off, items, settings)
-  await ipc.printInvoice(html)
+  if (isElectron) {
+    await ipc.printInvoice(html)
+  } else {
+    const win = window.open('', '_blank')
+    if (win) { win.document.write(html); win.document.close(); win.print() }
+  }
 }
 
 async function saveOfferPdf(off: Offer, items: OfferItem[], settings: Settings | null) {
   const html = await buildOfferHtml(off, items, settings)
   const name = `Προσφορά-${off.number}`
-  await ipc.savePdf(html, name)
+  if (isElectron) {
+    await ipc.savePdf(html, name)
+  } else {
+    const { Share } = await import('@capacitor/share')
+    await Share.share({ title: name, text: html, dialogTitle: 'Κοινοποίηση προσφοράς' })
+  }
 }
 
 export default function Offers() {

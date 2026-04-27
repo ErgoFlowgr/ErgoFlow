@@ -183,7 +183,12 @@ ${inv.mydata_mark ? `<div style="margin-bottom:14px;padding:8px 14px;border:1px 
 
 async function printInvoice(inv: Invoice, items: InvoiceItem[], settings: Settings | null, customerVat?: string) {
   const html = buildInvoiceHtml(inv, items, settings, customerVat)
-  await ipc.printInvoice(html)
+  if (isElectron) {
+    await ipc.printInvoice(html)
+  } else {
+    const win = window.open('', '_blank')
+    if (win) { win.document.write(html); win.document.close(); win.print() }
+  }
 }
 
 export default function Invoices() {
@@ -420,18 +425,30 @@ export default function Invoices() {
     const invItems = await getInvoiceItems(inv.id)
     const html = buildInvoiceHtml(inv, invItems, settings, getCustomerVat(inv))
     const name = `${inv.number}${inv.customer_name ? '-' + inv.customer_name : ''}`
-    await ipc.savePdf(html, name)
+    if (isElectron) {
+      await ipc.savePdf(html, name)
+    } else {
+      // Mobile: share via native share sheet
+      const { Share } = await import('@capacitor/share')
+      await Share.share({ title: name, text: html, dialogTitle: 'Κοινοποίηση τιμολογίου' })
+    }
   }
 
   const handleShareMessenger = async (inv: Invoice, messenger: 'whatsapp' | 'viber') => {
     const invItems = await getInvoiceItems(inv.id)
     const html = buildInvoiceHtml(inv, invItems, settings, getCustomerVat(inv))
     const filename = `${inv.number}${inv.customer_name ? '-' + inv.customer_name : ''}`
-    const filePath = await ipc.saveDesktopPdf(html, filename)
-    const scheme = messenger === 'whatsapp' ? 'whatsapp://send' : 'viber://forward'
-    await ipc.openExternal(scheme)
-    const pdfName = filePath.split('\\').pop() ?? filename
-    setTimeout(() => alert(`Το PDF αποθηκεύτηκε στην Επιφάνεια Εργασίας:\n${pdfName}\n\nΣύρε το αρχείο στο παράθυρο του ${messenger === 'whatsapp' ? 'WhatsApp' : 'Viber'}.`), 800)
+    if (isElectron) {
+      const filePath = await ipc.saveDesktopPdf(html, filename)
+      const scheme = messenger === 'whatsapp' ? 'whatsapp://send' : 'viber://forward'
+      await ipc.openExternal(scheme)
+      const pdfName = filePath.split('\\').pop() ?? filename
+      setTimeout(() => alert(`Το PDF αποθηκεύτηκε στην Επιφάνεια Εργασίας:\n${pdfName}\n\nΣύρε το αρχείο στο παράθυρο του ${messenger === 'whatsapp' ? 'WhatsApp' : 'Viber'}.`), 800)
+    } else {
+      // Mobile: native share sheet includes WhatsApp and Viber automatically
+      const { Share } = await import('@capacitor/share')
+      await Share.share({ title: filename, text: html, dialogTitle: 'Κοινοποίηση μέσω' })
+    }
   }
 
   const statusColor = (s: Invoice['status']) =>
