@@ -25,18 +25,26 @@ function AppVersion() {
   return <p className="text-xs text-gray-600 px-2">v{version}</p>
 }
 
-interface LayoutProps { children: React.ReactNode; onSignOut?: () => void; trialDaysLeft?: number | null }
+interface LayoutProps {
+  children: React.ReactNode
+  onSignOut?: () => void
+  trialDaysLeft?: number | null
+  tier?: string
+  subscriptionStatus?: string
+}
 
-export default function Layout({ children, onSignOut, trialDaysLeft }: LayoutProps) {
+export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'basic', subscriptionStatus = 'trial' }: LayoutProps) {
   const { t } = useTranslation()
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [syncPulse, setSyncPulse] = useState(false)
   const [hiddenTabs, setHiddenTabs] = useState<string[]>([])
   const [updateReady, setUpdateReady] = useState(false)
+  const [syncEnabled, setSyncEnabled] = useState(false)
 
   const loadHiddenTabs = () => {
     getSettings().then(s => {
       try { setHiddenTabs(JSON.parse(s?.hidden_tabs ?? '[]')) } catch { setHiddenTabs([]) }
+      setSyncEnabled(!!s?.sync_enabled)
     })
   }
 
@@ -98,15 +106,34 @@ export default function Layout({ children, onSignOut, trialDaysLeft }: LayoutPro
         </nav>
 
         <div className="p-3 border-t border-surface-600 space-y-2">
-          {trialDaysLeft !== null && trialDaysLeft !== undefined && trialDaysLeft <= 7 && (
+          {/* Subscription tier + trial countdown */}
+          {subscriptionStatus === 'trial' && trialDaysLeft !== null && trialDaysLeft !== undefined ? (
             <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-2.5 py-2 text-xs text-yellow-400">
-              Δοκιμαστική περίοδος: {trialDaysLeft} {trialDaysLeft === 1 ? 'μέρα απομένει' : 'μέρες απομένουν'}
+              <span className="font-medium">Trial</span> · {trialDaysLeft} {trialDaysLeft === 1 ? 'μέρα απομένει' : 'μέρες απομένουν'}
+            </div>
+          ) : (
+            <div className="px-1">
+              <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                tier === 'pro'  ? 'bg-purple-500/20 text-purple-400' :
+                tier === 'plus' ? 'bg-brand-500/20 text-brand-400' :
+                'bg-surface-600 text-gray-400'
+              }`}>
+                {tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Plus' : 'Basic'}
+              </span>
             </div>
           )}
-          <div className="flex items-center gap-2 text-xs text-gray-500">
-            <span className={`w-2 h-2 rounded-full ${isOnline ? (syncPulse ? 'bg-accent-green animate-pulse' : 'bg-accent-green') : 'bg-gray-500'}`} />
-            <span>{isOnline ? t('common.online') : t('common.offline')}</span>
+
+          {/* Connectivity + backup status */}
+          <div className="flex items-center justify-between text-xs text-gray-500">
+            <div className="flex items-center gap-1.5">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${isOnline ? (syncPulse ? 'bg-accent-green animate-pulse' : 'bg-accent-green') : 'bg-gray-500'}`} />
+              <span>{isOnline ? t('common.online') : t('common.offline')}</span>
+            </div>
+            <span className={syncEnabled ? 'text-brand-500/70' : 'text-gray-600'}>
+              {syncEnabled ? '↑ backup' : 'no backup'}
+            </span>
           </div>
+
           <AppVersion />
           {onSignOut && (
             <button

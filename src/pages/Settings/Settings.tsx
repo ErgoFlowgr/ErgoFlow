@@ -275,13 +275,18 @@ export default function SettingsPage() {
         </Field>
       </Section>
 
-      {/* Sync */}
-      <Section title="Συγχρονισμός">
+      {/* Cloud Backup */}
+      <Section title="Cloud Backup">
+        <p className="text-xs text-gray-500 -mt-1 mb-3">
+          Ανεβάζει τα δεδομένα σας στους servers του Ergoflow. Η εφαρμογή λειτουργεί κανονικά και χωρίς internet — αυτό είναι μόνο για backup και χρήση σε πολλές συσκευές.
+        </p>
         <label className="flex items-center justify-between py-1 cursor-pointer">
           <div>
-            <span className="text-sm text-gray-300">Συγχρονισμός δεδομένων</span>
+            <span className="text-sm text-gray-300">Αυτόματο backup στους servers Ergoflow</span>
             <p className="text-xs text-gray-500 mt-0.5">
-              {settings.sync_enabled ? 'Τα δεδομένα συγχρονίζονται με το cloud' : 'Τα δεδομένα αποθηκεύονται τοπικά'}
+              {settings.sync_enabled
+                ? 'Τα δεδομένα ανεβαίνουν αυτόματα στους servers Ergoflow'
+                : 'Ανενεργό — τα δεδομένα υπάρχουν μόνο σε αυτή τη συσκευή'}
             </p>
           </div>
           <input
@@ -291,31 +296,39 @@ export default function SettingsPage() {
             className="w-4 h-4 accent-brand-500 cursor-pointer"
           />
         </label>
-        {!!settings.sync_enabled && (
-          <div className="flex items-center justify-between pt-2 border-t border-surface-600">
-            <div>
-              <p className="text-sm text-gray-300">Τελευταία ενημέρωση</p>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {lastSyncAt ? new Date(lastSyncAt).toLocaleString('el-GR') : 'Δεν έχει γίνει ακόμη'}
-              </p>
-            </div>
-            <button
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                syncStatus === 'syncing' ? 'bg-brand-500/20 text-brand-400 cursor-not-allowed' :
-                syncStatus === 'ok' ? 'bg-emerald-500/20 text-emerald-400' :
-                syncStatus === 'error' ? 'bg-red-500/20 text-red-400' :
-                'bg-brand-500 text-white hover:bg-brand-600'
-              }`}
-              disabled={syncStatus === 'syncing'}
-              onClick={handleSyncNow}
-            >
-              {syncStatus === 'syncing' ? 'Συγχρονισμός...' :
-               syncStatus === 'ok' ? '✓ Ολοκληρώθηκε' :
-               syncStatus === 'error' ? '✗ Σφάλμα' :
-               'Συγχρονισμός τώρα'}
-            </button>
+        {!settings.sync_enabled && (
+          <div className="flex items-start gap-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+            <span className="text-yellow-500 text-sm mt-0.5">⚠</span>
+            <p className="text-xs text-yellow-400">Χωρίς backup. Αν χαθεί ή χαλάσει η συσκευή, τα δεδομένα δεν ανακτώνται.</p>
           </div>
         )}
+        <div className="flex items-center justify-between pt-2 border-t border-surface-600">
+          <div>
+            <p className="text-sm text-gray-300">Τελευταίο backup</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {settings.sync_enabled
+                ? (lastSyncAt ? new Date(lastSyncAt).toLocaleString('el-GR') : 'Δεν έχει γίνει ακόμη')
+                : 'Το backup είναι ανενεργό'}
+            </p>
+          </div>
+          <button
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              !settings.sync_enabled ? 'bg-surface-600 text-gray-500 cursor-not-allowed' :
+              syncStatus === 'syncing' ? 'bg-brand-500/20 text-brand-400 cursor-not-allowed' :
+              syncStatus === 'ok' ? 'bg-emerald-500/20 text-emerald-400' :
+              syncStatus === 'error' ? 'bg-red-500/20 text-red-400' :
+              'bg-brand-500 text-white hover:bg-brand-600'
+            }`}
+            disabled={!settings.sync_enabled || syncStatus === 'syncing'}
+            onClick={handleSyncNow}
+            title={!settings.sync_enabled ? 'Ενεργοποιήστε πρώτα το backup' : undefined}
+          >
+            {syncStatus === 'syncing' ? 'Ανέβασμα...' :
+             syncStatus === 'ok' ? '✓ Ολοκληρώθηκε' :
+             syncStatus === 'error' ? '✗ Σφάλμα' :
+             'Backup τώρα'}
+          </button>
+        </div>
         {platform.isMobile && (
           <div className="pt-2 border-t border-surface-600">
             <button

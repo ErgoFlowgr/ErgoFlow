@@ -181,7 +181,7 @@ export default function App() {
           <button onClick={() => setUpdateError(null)} className="shrink-0 opacity-70 hover:opacity-100">✕</button>
         </div>
       )}
-      <Layout onSignOut={handleSignOut} trialDaysLeft={trialDaysLeft}>
+      <Layout onSignOut={handleSignOut} trialDaysLeft={trialDaysLeft} tier={subCtx.tier} subscriptionStatus={subCtx.status}>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
