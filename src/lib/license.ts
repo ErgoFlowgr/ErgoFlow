@@ -86,8 +86,22 @@ async function verifyOnline(): Promise<RawSubData | null> {
 
     type SubRow = { status: string; trial_end: string; tier: string; vapi_minutes_used: number; vapi_phone_number: string | null }
     const rows = await res.json() as SubRow[]
-    const sub = rows[0]
-    if (!sub) return null
+    let sub = rows[0] ?? null
+
+    if (!sub) {
+      // No row yet — first install. Create a trial row.
+      const trialEnd = new Date(Date.now() + 30 * 86400_000).toISOString()
+      const createRes = await fetch(`${config.url}/rest/v1/subscriptions`, {
+        method: 'POST',
+        headers: { ...headers, Prefer: 'return=representation' },
+        body: JSON.stringify({ user_id: userId, status: 'trial', trial_end: trialEnd, tier: 'trial' }),
+        signal: AbortSignal.timeout(8000),
+      })
+      if (!createRes.ok) return null
+      const created = await createRes.json() as SubRow[]
+      sub = created[0] ?? null
+      if (!sub) return null
+    }
 
     const trialEnd  = new Date(sub.trial_end)
     const now       = Date.now()
