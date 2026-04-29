@@ -84,6 +84,7 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
     }
   }, [])
 
+  // ── Desktop sidebar nav item ──────────────────────────────────────────────
   const navItem = (to: string, icon: React.ReactNode, label: string) => (
     <NavLink
       to={to}
@@ -100,6 +101,44 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
     </NavLink>
   )
 
+  // ── Mobile bottom-bar nav item ────────────────────────────────────────────
+  const mobileNavItem = (to: string, icon: React.ReactNode, label: string) => (
+    <NavLink
+      to={to}
+      className={({ isActive }) =>
+        `flex flex-col items-center gap-1 px-3 py-2 flex-1 transition-colors duration-150 ${
+          isActive ? 'text-brand-500' : 'text-gray-500'
+        }`
+      }
+    >
+      {icon}
+      <span className="text-[10px] font-medium leading-none">{label}</span>
+    </NavLink>
+  )
+
+  // ── Mobile layout ─────────────────────────────────────────────────────────
+  if (!isElectron) {
+    return (
+      <div className="flex flex-col h-screen w-screen overflow-hidden bg-surface-900">
+        {/* Content area — padded so content doesn't hide under bottom bar */}
+        <main className="flex-1 overflow-auto pb-safe">
+          {children}
+        </main>
+
+        {/* Bottom navigation bar */}
+        <nav className="shrink-0 bg-surface-800 border-t border-surface-600 flex items-stretch"
+             style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+          {mobileNavItem('/dashboard', <HomeIcon />, t('nav.dashboard'))}
+          {!hiddenTabs.includes('jobs')      && mobileNavItem('/jobs',      <JobsIcon />,      t('nav.jobs'))}
+          {!hiddenTabs.includes('customers') && mobileNavItem('/customers', <UsersIcon />,     t('nav.customers'))}
+          {!hiddenTabs.includes('invoices')  && mobileNavItem('/invoices',  <InvoiceIcon />,   t('nav.invoices'))}
+          {mobileNavItem('/settings', <SettingsIcon />, t('nav.settings'))}
+        </nav>
+      </div>
+    )
+  }
+
+  // ── Desktop layout ────────────────────────────────────────────────────────
   return (
     <div className="flex h-screen w-screen overflow-hidden">
       {/* Sidebar */}

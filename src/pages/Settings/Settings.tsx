@@ -348,6 +348,8 @@ export default function SettingsPage() {
               onClick={async () => {
                 await platform.clearToken().catch(() => {})
                 await platform.removeKeychainValue('supabase_refresh_token').catch(() => {})
+                await platform.removeKeychainValue('saved_email').catch(() => {})
+                await platform.removeKeychainValue('saved_password').catch(() => {})
                 window.location.reload()
               }}
             >
