@@ -34,12 +34,36 @@ interface RawSubData {
 }
 
 async function verifyOnline(): Promise<RawSubData | null> {
-  // Call Supabase directly from the renderer on both platforms.
-  // Electron's main process has stale tokens; the renderer always has the live session.
   try {
     const config = await getSupabaseConfig()
-    const token  = await platform.getToken()
-    if (!config || !token) return null
+    if (!config) return null
+
+    let token = await platform.getToken()
+    if (!token) return null
+
+    // If token is expired (or expiring within 60s), refresh it
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1])) as { exp?: number }
+      if ((payload.exp ?? 0) * 1000 < Date.now() + 60_000) {
+        const refreshToken = isElectron ? await ipc.keychain.get('supabase_refresh_token') : null
+        if (refreshToken) {
+          const r = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', apikey: config.anonKey },
+            body: JSON.stringify({ refresh_token: refreshToken }),
+            signal: AbortSignal.timeout(5000),
+          })
+          if (r.ok) {
+            const d = await r.json() as { access_token?: string; refresh_token?: string }
+            if (d.access_token) {
+              token = d.access_token
+              await ipc.keychain.set('supabase_access_token', token)
+              if (d.refresh_token) await ipc.keychain.set('supabase_refresh_token', d.refresh_token)
+            }
+          }
+        }
+      }
+    } catch { /* use existing token */ }
 
     let userId: string | null = null
     try {
