@@ -45,7 +45,7 @@ async function verifyOnline(): Promise<RawSubData | null> {
     try {
       const payload = JSON.parse(atob(token.split('.')[1])) as { exp?: number }
       if ((payload.exp ?? 0) * 1000 < Date.now() + 60_000) {
-        const refreshToken = isElectron ? await ipc.keychain.get('supabase_refresh_token') : null
+        const refreshToken = await platform.getKeychainValue('supabase_refresh_token')
         if (refreshToken) {
           const r = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
             method: 'POST',
@@ -57,8 +57,8 @@ async function verifyOnline(): Promise<RawSubData | null> {
             const d = await r.json() as { access_token?: string; refresh_token?: string }
             if (d.access_token) {
               token = d.access_token
-              await ipc.keychain.set('supabase_access_token', token)
-              if (d.refresh_token) await ipc.keychain.set('supabase_refresh_token', d.refresh_token)
+              await platform.setToken(token)
+              if (d.refresh_token) await platform.setKeychainValue('supabase_refresh_token', d.refresh_token)
             }
           }
         }
