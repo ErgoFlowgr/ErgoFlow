@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../../i18n/i18n'
 import { getSettings, saveSettings, getCategories, upsertCategory, deleteCategory, type Settings, type Category, uuid } from '../../lib/db'
-import { ipc, isElectron } from '../../lib/electron'
+import { ipc, isElectron, getSupabaseConfig } from '../../lib/electron'
 import { platform } from '../../lib/platform'
 import { useSubscription } from '../../App'
 import { syncNow } from '../../lib/sync-mobile'
@@ -31,6 +31,7 @@ export default function SettingsPage() {
   const [saveError, setSaveError] = useState(false)
   const [claudeKey, setClaudeKey] = useState('')
   const { isPro, vapiPhoneNumber, vapiMinutesUsed, tier, status } = useSubscription()
+  const [debugResult, setDebugResult] = useState('')
   const [newCat, setNewCat] = useState('')
   const [newCatColor, setNewCatColor] = useState('#4f6ef7')
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
@@ -145,13 +146,37 @@ export default function SettingsPage() {
       <h1 className="text-2xl font-bold">{t('settings.title')}</h1>
 
       {/* Subscription debug — remove once tier display is confirmed working */}
-      <div className="bg-surface-700 border border-surface-600 rounded-lg px-4 py-3 text-xs text-gray-400 font-mono">
-        <span className="text-gray-500">subscription: </span>
-        tier=<span className="text-yellow-400">{tier}</span>
-        {'  '}status=<span className="text-yellow-400">{status}</span>
-        {'  '}cached_tier=<span className="text-yellow-400">{settings?.license_tier ?? 'null'}</span>
-        {'  '}cached_status=<span className="text-yellow-400">{settings?.license_status ?? 'null'}</span>
-        {'  '}verified=<span className="text-yellow-400">{settings?.license_verified_at ? new Date(settings.license_verified_at).toLocaleDateString() : 'never'}</span>
+      <div className="bg-surface-700 border border-surface-600 rounded-lg px-4 py-3 text-xs text-gray-400 font-mono space-y-1">
+        <div>
+          tier=<span className="text-yellow-400">{tier}</span>
+          {'  '}status=<span className="text-yellow-400">{status}</span>
+          {'  '}cached_tier=<span className="text-yellow-400">{settings?.license_tier ?? 'null'}</span>
+          {'  '}cached_status=<span className="text-yellow-400">{settings?.license_status ?? 'null'}</span>
+          {'  '}verified=<span className="text-yellow-400">{settings?.license_verified_at ? new Date(settings.license_verified_at).toLocaleDateString() : 'never'}</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <button
+            className="bg-surface-600 hover:bg-surface-500 text-gray-300 px-2 py-0.5 rounded text-xs"
+            onClick={async () => {
+              setDebugResult('checking...')
+              try {
+                const config = await getSupabaseConfig()
+                const token = await platform.getToken()
+                if (!config) { setDebugResult('ERROR: no supabase config'); return }
+                if (!token) { setDebugResult('ERROR: no token in keychain'); return }
+                let userId = ''
+                try { userId = (JSON.parse(atob(token.split('.')[1])) as { sub?: string }).sub ?? '' } catch { setDebugResult('ERROR: bad JWT'); return }
+                const res = await fetch(`${config.url}/rest/v1/subscriptions?user_id=eq.${userId}&select=*&limit=1`, {
+                  headers: { apikey: config.anonKey, Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                  signal: AbortSignal.timeout(8000),
+                })
+                const text = await res.text()
+                setDebugResult(`HTTP ${res.status}: ${text.substring(0, 200)}`)
+              } catch (e) { setDebugResult(`FETCH ERROR: ${String(e)}`) }
+            }}
+          >Force check</button>
+          {debugResult && <span className="text-yellow-300 break-all">{debugResult}</span>}
+        </div>
       </div>
 
       {/* Company */}
