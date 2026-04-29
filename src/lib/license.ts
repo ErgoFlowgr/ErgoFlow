@@ -34,15 +34,8 @@ interface RawSubData {
 }
 
 async function verifyOnline(): Promise<RawSubData | null> {
-  if (isElectron) {
-    try {
-      return await ipc.subscriptionCheck() as RawSubData
-    } catch {
-      return null
-    }
-  }
-
-  // Android: call Supabase REST directly
+  // Call Supabase directly from the renderer on both platforms.
+  // Electron's main process has stale tokens; the renderer always has the live session.
   try {
     const config = await getSupabaseConfig()
     const token  = await platform.getToken()
@@ -63,7 +56,7 @@ async function verifyOnline(): Promise<RawSubData | null> {
 
     const res = await fetch(
       `${config.url}/rest/v1/subscriptions?user_id=eq.${userId}&select=*&limit=1`,
-      { headers, signal: AbortSignal.timeout(5000) }
+      { headers, signal: AbortSignal.timeout(8000) }
     )
     if (!res.ok) return null
 
