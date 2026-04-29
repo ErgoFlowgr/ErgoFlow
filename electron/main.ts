@@ -140,7 +140,7 @@ app.whenReady().then(async () => {
   })
 })
 
-ipcMain.handle('update:install', () => { autoUpdater.quitAndInstall() })
+ipcMain.handle('update:install', () => { autoUpdater.quitAndInstall(true, true) })
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
