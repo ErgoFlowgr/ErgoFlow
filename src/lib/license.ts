@@ -1,11 +1,12 @@
 /**
- * Offline license verification — 30-day Spotify-style model.
+ * Offline license verification — Spotify-style model.
  *
  * On every app start:
- *  - If last verified < 30 days ago → use cached result (works offline)
- *  - If >= 30 days or never verified → must connect to Supabase to re-verify
- *    - Success → cache result, allow access
- *    - Failure (offline) → block with 'verification_required'
+ *  - Always attempt online verification first (gets fresh tier/status)
+ *  - If online succeeds → cache result, show fresh data
+ *  - If offline/error → fall back to cache
+ *    - Cache < 30 days old → allow access with cached data
+ *    - Cache >= 30 days old or missing → block with 'verification_required'
  */
 
 import { getSettings, saveSettings } from './db'
@@ -91,25 +92,9 @@ async function verifyOnline(): Promise<RawSubData | null> {
 
 export async function checkLicense(): Promise<LicenseStatus> {
   const s = await getSettings()
+  const verifiedAt = s?.license_verified_at ? new Date(s.license_verified_at).getTime() : null
 
-  const verifiedAt  = s?.license_verified_at ? new Date(s.license_verified_at).getTime() : null
-  const needsVerify = !verifiedAt || (Date.now() - verifiedAt) >= THIRTY_DAYS_MS
-
-  if (!needsVerify && s?.license_status) {
-    // Cache hit — compute daysLeft from cached trial_end
-    const trialEnd = s.license_trial_end ? new Date(s.license_trial_end) : null
-    const daysLeft = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / 86400_000)) : 0
-    return {
-      status:          s.license_status as LicenseStatus['status'],
-      daysLeft,
-      trialEnd:        s.license_trial_end ?? '',
-      tier:            s.license_tier ?? 'basic',
-      vapiMinutesUsed: 0,
-      vapiPhoneNumber: null,
-    }
-  }
-
-  // Needs online verification
+  // Always try online first — so tier changes (trial→pro) are reflected immediately
   const fresh = await verifyOnline()
 
   if (fresh) {
@@ -122,25 +107,39 @@ export async function checkLicense(): Promise<LicenseStatus> {
     return { ...fresh, status: fresh.status as LicenseStatus['status'] }
   }
 
-  // If license_verified_at is null, this is a fresh install or a DB migration that just added
-  // the license columns. Never block on first verification — give trial access and retry next launch.
-  if (verifiedAt === null) {
+  // Online failed — fall back to cache
+  if (verifiedAt !== null && s?.license_status) {
+    const cacheAge = Date.now() - verifiedAt
+    if (cacheAge < THIRTY_DAYS_MS) {
+      // Within grace period — allow access with cached data
+      const trialEnd = s.license_trial_end ? new Date(s.license_trial_end) : null
+      const daysLeft = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / 86400_000)) : 0
+      return {
+        status:          s.license_status as LicenseStatus['status'],
+        daysLeft,
+        trialEnd:        s.license_trial_end ?? '',
+        tier:            s.license_tier ?? 'basic',
+        vapiMinutesUsed: 0,
+        vapiPhoneNumber: null,
+      }
+    }
+    // Grace period expired — require reconnection
     return {
-      status:          'trial',
-      daysLeft:        14,
-      trialEnd:        new Date(Date.now() + 14 * 86400_000).toISOString(),
-      tier:            'basic',
+      status:          'verification_required',
+      daysLeft:        0,
+      trialEnd:        s.license_trial_end ?? '',
+      tier:            s.license_tier ?? 'basic',
       vapiMinutesUsed: 0,
       vapiPhoneNumber: null,
     }
   }
 
-  // Previously verified but now overdue and offline — block access
+  // First install — never verified, online failed — give trial access
   return {
-    status:          'verification_required',
-    daysLeft:        0,
-    trialEnd:        s?.license_trial_end ?? '',
-    tier:            s?.license_tier ?? 'basic',
+    status:          'trial',
+    daysLeft:        14,
+    trialEnd:        new Date(Date.now() + 14 * 86400_000).toISOString(),
+    tier:            'basic',
     vapiMinutesUsed: 0,
     vapiPhoneNumber: null,
   }
