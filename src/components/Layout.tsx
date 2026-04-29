@@ -19,7 +19,13 @@ const SettingsIcon  = () => <svg className="w-5 h-5" fill="none" stroke="current
 function AppVersion() {
   const [version, setVersion] = useState<string | null>(null)
   useEffect(() => {
-    if (isElectron) ipc.getVersion().then(setVersion).catch(() => {})
+    if (isElectron) {
+      ipc.getVersion().then(setVersion).catch(() => {})
+    } else {
+      import('@capacitor/device').then(({ Device }) =>
+        Device.getInfo().then(info => setVersion(info.appVersion ?? null)).catch(() => {})
+      ).catch(() => {})
+    }
   }, [])
   if (!version) return null
   return <p className="text-xs text-gray-600 px-2">v{version}</p>
