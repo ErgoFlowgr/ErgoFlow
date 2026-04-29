@@ -123,6 +123,8 @@ export default function App() {
   const handleSignOut = async () => {
     await platform.clearToken().catch(() => {})
     await platform.removeKeychainValue('supabase_refresh_token').catch(() => {})
+    await platform.removeKeychainValue('saved_email').catch(() => {})
+    await platform.removeKeychainValue('saved_password').catch(() => {})
     setAuthenticated(false)
     setOnboarded(false)
   }
