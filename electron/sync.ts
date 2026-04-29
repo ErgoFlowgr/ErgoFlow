@@ -54,11 +54,9 @@ export function setupSyncWorker(win: BrowserWindow | null) {
   sync(win) // run immediately on startup
   backfillVapiCalls(win) // pull VAPI call history on startup
 
-  // Push: frequent, but skipped when nothing is queued
-  setInterval(() => pushOnly(win), PUSH_INTERVAL_MS)
-
-  // Pull: every 5 minutes
-  setInterval(() => pullOnly(win), PULL_INTERVAL_MS)
+  // .unref() so intervals don't keep the process alive after the window closes
+  setInterval(() => pushOnly(win), PUSH_INTERVAL_MS).unref()
+  setInterval(() => pullOnly(win), PULL_INTERVAL_MS).unref()
 }
 
 // Called from main.ts when the window regains focus
