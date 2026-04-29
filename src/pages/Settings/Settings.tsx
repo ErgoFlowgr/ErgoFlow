@@ -30,7 +30,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState(false)
   const [claudeKey, setClaudeKey] = useState('')
-  const { isPro, vapiPhoneNumber, vapiMinutesUsed } = useSubscription()
+  const { isPro, vapiPhoneNumber, vapiMinutesUsed, tier, status } = useSubscription()
   const [newCat, setNewCat] = useState('')
   const [newCatColor, setNewCatColor] = useState('#4f6ef7')
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
@@ -143,6 +143,16 @@ export default function SettingsPage() {
   return (
     <div className={`p-6 max-w-2xl mx-auto space-y-5 ${platform.isMobile ? 'pb-4' : 'pb-24'}`}>
       <h1 className="text-2xl font-bold">{t('settings.title')}</h1>
+
+      {/* Subscription debug — remove once tier display is confirmed working */}
+      <div className="bg-surface-700 border border-surface-600 rounded-lg px-4 py-3 text-xs text-gray-400 font-mono">
+        <span className="text-gray-500">subscription: </span>
+        tier=<span className="text-yellow-400">{tier}</span>
+        {'  '}status=<span className="text-yellow-400">{status}</span>
+        {'  '}cached_tier=<span className="text-yellow-400">{settings?.license_tier ?? 'null'}</span>
+        {'  '}cached_status=<span className="text-yellow-400">{settings?.license_status ?? 'null'}</span>
+        {'  '}verified=<span className="text-yellow-400">{settings?.license_verified_at ? new Date(settings.license_verified_at).toLocaleDateString() : 'never'}</span>
+      </div>
 
       {/* Company */}
       <Section title={t('settings.company')}>
