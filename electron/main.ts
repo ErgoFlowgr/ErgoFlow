@@ -6,7 +6,7 @@ import os from 'os'
 import { initDatabase, switchDatabase, getDb, cleanupOldPendingJobs } from './db'
 import { storeSecret, getSecret, deleteSecret } from './keychain'
 import { setupSyncWorker, triggerSync, triggerPull, isSyncWorkerRunning } from './sync'
-import { setSessionToken, setRefreshToken } from './session'
+import { setSessionToken, getSessionToken, setRefreshToken, getRefreshToken } from './session'
 
 const DEV = process.env['NODE_ENV'] === 'development'
 const DEV_SERVER = `http://127.0.0.1:${process.env['VITE_DEV_PORT'] ?? '5173'}`
@@ -504,14 +504,14 @@ ipcMain.handle('subscription:check', async () => {
 
     if (!supaUrl || !supaKey) throw new Error('missing supabase config')
 
-    // Get a fresh token — refresh if expired or expiring within 5 minutes
-    let token = await getSecret('supabase_access_token')
+    // Get a fresh token — prefer in-memory (loaded at login), fall back to keychain
+    let token = getSessionToken() ?? await getSecret('supabase_access_token')
     if (!token) throw new Error('not authenticated')
 
     try {
       const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()) as { exp?: number; sub?: string }
       if ((payload.exp ?? 0) * 1000 < Date.now() + 5 * 60_000) {
-        const refreshToken = await getSecret('supabase_refresh_token')
+        const refreshToken = getRefreshToken() ?? await getSecret('supabase_refresh_token')
         if (refreshToken) {
           const refreshRes = await net.fetch(`${supaUrl}/auth/v1/token?grant_type=refresh_token`, {
             method: 'POST',
@@ -559,15 +559,15 @@ ipcMain.handle('subscription:check', async () => {
       vapi_minutes_used: number
       vapi_phone_number: string | null
     }
-    let sub: SubRow | null = null
-
-    if (getRes.ok) {
-      const rows = await getRes.json() as Array<SubRow>
-      sub = rows[0] ?? null
+    if (!getRes.ok) {
+      throw new Error(`subscriptions fetch failed: ${getRes.status}`)
     }
 
+    const rows = await getRes.json() as Array<SubRow>
+    let sub: SubRow | null = rows[0] ?? null
+
     if (!sub) {
-      // First install — create a trial row (basic tier, 30-day trial)
+      // Genuine first install — no row exists yet, create a trial row
       const trialEnd = new Date(Date.now() + 30 * 86400_000).toISOString()
       const createRes = await net.fetch(`${supaUrl}/rest/v1/subscriptions`, {
         method: 'POST',
@@ -579,7 +579,7 @@ ipcMain.handle('subscription:check', async () => {
         const created = await createRes.json() as Array<SubRow>
         sub = created[0] ?? { status: 'trial', trial_end: trialEnd, tier: 'trial', vapi_minutes_used: 0, vapi_phone_number: null }
       } else {
-        sub = { status: 'trial', trial_end: trialEnd, tier: 'trial', vapi_minutes_used: 0, vapi_phone_number: null }
+        throw new Error(`subscription create failed: ${createRes.status}`)
       }
     }
 
