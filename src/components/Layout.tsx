@@ -118,6 +118,19 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
 
   // ── Mobile layout ─────────────────────────────────────────────────────────
   if (!isElectron) {
+    const allMobileItems = [
+      { to: '/dashboard', icon: <HomeIcon />,      label: t('nav.dashboard'), key: 'dashboard' },
+      ...(!hiddenTabs.includes('jobs')      ? [{ to: '/jobs',      icon: <JobsIcon />,      label: t('nav.jobs'),      key: 'jobs' }]      : []),
+      ...(!hiddenTabs.includes('calls')     ? [{ to: '/calls',     icon: <PhoneIcon />,     label: t('nav.calls'),     key: 'calls' }]     : []),
+      ...(!hiddenTabs.includes('customers') ? [{ to: '/customers', icon: <UsersIcon />,     label: t('nav.customers'), key: 'customers' }] : []),
+      ...(!hiddenTabs.includes('offers')    ? [{ to: '/offers',    icon: <OffersIcon />,    label: t('nav.offers'),    key: 'offers' }]    : []),
+      ...(!hiddenTabs.includes('invoices')  ? [{ to: '/invoices',  icon: <InvoiceIcon />,   label: t('nav.invoices'),  key: 'invoices' }]  : []),
+      ...(!hiddenTabs.includes('inventory') ? [{ to: '/inventory', icon: <InventoryIcon />, label: t('nav.inventory'), key: 'inventory' }] : []),
+      ...(!hiddenTabs.includes('chat')      ? [{ to: '/chat',      icon: <ChatIcon />,      label: t('nav.chat'),      key: 'chat' }]      : []),
+      { to: '/settings', icon: <SettingsIcon />, label: t('nav.settings'), key: 'settings' },
+    ]
+    const showLabels = allMobileItems.length <= 5
+
     return (
       <div className="flex flex-col h-screen w-screen overflow-hidden bg-surface-900">
         {/* Content area — padded so content doesn't hide under bottom bar */}
@@ -125,14 +138,25 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
           {children}
         </main>
 
-        {/* Bottom navigation bar */}
-        <nav className="shrink-0 bg-surface-800 border-t border-surface-600 flex items-stretch"
+        {/* Bottom navigation bar — scrolls horizontally when many tabs are enabled */}
+        <nav className="shrink-0 bg-surface-800 border-t border-surface-600 overflow-x-auto"
              style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          {mobileNavItem('/dashboard', <HomeIcon />, t('nav.dashboard'))}
-          {!hiddenTabs.includes('jobs')      && mobileNavItem('/jobs',      <JobsIcon />,      t('nav.jobs'))}
-          {!hiddenTabs.includes('customers') && mobileNavItem('/customers', <UsersIcon />,     t('nav.customers'))}
-          {!hiddenTabs.includes('invoices')  && mobileNavItem('/invoices',  <InvoiceIcon />,   t('nav.invoices'))}
-          {mobileNavItem('/settings', <SettingsIcon />, t('nav.settings'))}
+          <div className="flex">
+            {allMobileItems.map(item => (
+              <NavLink
+                key={item.key}
+                to={item.to}
+                className={({ isActive }) =>
+                  `flex flex-col items-center justify-center gap-0.5 py-2 transition-colors duration-150 ${
+                    showLabels ? 'flex-1 px-1' : 'px-4'
+                  } ${isActive ? 'text-brand-500' : 'text-gray-500'}`
+                }
+              >
+                {item.icon}
+                {showLabels && <span className="text-[10px] font-medium leading-none">{item.label}</span>}
+              </NavLink>
+            ))}
+          </div>
         </nav>
       </div>
     )
