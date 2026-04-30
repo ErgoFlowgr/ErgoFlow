@@ -62,7 +62,6 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState(false)
   const [onboarded, setOnboarded] = useState(false)
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null)
-  const [, setSyncKey] = useState(0)
   const [updateReady, setUpdateReady] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
 
@@ -105,11 +104,6 @@ export default function App() {
       ipc.update.onError((msg) => setUpdateError(msg))
     }
 
-    if (!isElectron) {
-      const onSync = () => setSyncKey(k => k + 1)
-      window.addEventListener('sync:complete', onSync)
-      return () => window.removeEventListener('sync:complete', onSync)
-    }
   }, [i18n])
 
   if (!ready) {

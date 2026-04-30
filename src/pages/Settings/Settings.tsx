@@ -83,6 +83,10 @@ export default function SettingsPage() {
     if (isElectron) {
       ipc.on('sync:complete', loadOnSync)
       return () => ipc.off('sync:complete', loadOnSync)
+    } else {
+      const handler = () => { void loadOnSync() }
+      window.addEventListener('sync:complete', handler)
+      return () => window.removeEventListener('sync:complete', handler)
     }
   }, [])
 
