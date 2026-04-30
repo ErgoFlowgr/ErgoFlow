@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import i18n from '../../i18n/i18n'
 import { getSettings, saveSettings, getCategories, upsertCategory, deleteCategory, type Settings, type Category, uuid } from '../../lib/db'
@@ -35,6 +35,7 @@ export default function SettingsPage() {
   const [newCatColor, setNewCatColor] = useState('#4f6ef7')
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
+  const isDirty = useRef(false)
 
   const loadLastSync = async () => {
     try {
@@ -72,11 +73,16 @@ export default function SettingsPage() {
       try { setCategories(await getCategories()) } catch { /* ignore */ }
       try { setClaudeKey(await platform.getKeychainValue('claude_api_key') ?? '') } catch { /* ignore */ }
     }
+    const loadOnSync = async () => {
+      // Don't reload form while user has unsaved changes — would clear what they're typing
+      if (isDirty.current) return
+      await load()
+    }
     load()
     loadLastSync()
     if (isElectron) {
-      ipc.on('sync:complete', load)
-      return () => ipc.off('sync:complete', load)
+      ipc.on('sync:complete', loadOnSync)
+      return () => ipc.off('sync:complete', loadOnSync)
     }
   }, [])
 
@@ -88,6 +94,7 @@ export default function SettingsPage() {
       if (claudeKey) await platform.setKeychainValue('claude_api_key', claudeKey)
       i18n.changeLanguage(settings.language)
       document.documentElement.lang = settings.language
+      isDirty.current = false
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (e) {
@@ -109,7 +116,7 @@ export default function SettingsPage() {
     setCategories(await getCategories())
   }
 
-  const update = (patch: Partial<Settings>) => setSettings(p => p ? { ...p, ...patch } : p)
+  const update = (patch: Partial<Settings>) => { isDirty.current = true; setSettings(p => p ? { ...p, ...patch } : p) }
 
   const handleSyncToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const enabled = e.target.checked ? 1 : 0
