@@ -157,7 +157,10 @@ async function upsertRows(table: string, rows: Record<string, unknown>[], SAFE_C
     if (!cols.length) continue
 
     const placeholders = cols.map(() => '?').join(', ')
-    const updates = cols.map(c => `${c} = excluded.${c}`).join(', ')
+    // For settings, use COALESCE so null from remote never overwrites good local data
+    const updates = table === 'settings'
+      ? cols.map(c => `${c} = COALESCE(excluded.${c}, ${c})`).join(', ')
+      : cols.map(c => `${c} = excluded.${c}`).join(', ')
     const vals = cols.map(c => {
       const v = row[c]
       return typeof v === 'boolean' ? (v ? 1 : 0) : (v ?? null)

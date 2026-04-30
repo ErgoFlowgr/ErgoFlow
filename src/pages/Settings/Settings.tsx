@@ -122,7 +122,15 @@ export default function SettingsPage() {
         if (isElectron) {
           await ipc.syncEnable()
         } else {
+          // On Android, pull remote settings BEFORE pushing local ones.
+          // Remove settings from push queue so the pull isn't skipped — this ensures
+          // Supabase's real data (company name, credentials) comes in before we push.
+          try { await db.run('DELETE FROM sync_queue WHERE table_name = ? AND record_id = ?', ['settings', 'main']) } catch { /* ignore */ }
           await syncNow(true)
+          // Re-save sync_enabled=1 after pull (Supabase may have had 0), then push
+          await saveSettings({ sync_enabled: 1 })
+          update({ sync_enabled: 1 })
+          await syncNow()
         }
         await loadLastSync()
         setSyncStatus('ok')

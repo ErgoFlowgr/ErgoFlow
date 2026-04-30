@@ -451,7 +451,11 @@ async function pullRemoteChanges(url: string, key: string, initialToken: string,
         const cols = Object.keys(row).filter(c => SAFE_COL.test(c) && c !== 'owner_id' && localCols.has(c))
         if (cols.length === 0) continue
         const placeholders = cols.map(() => '?').join(', ')
-        const updates = cols.map(c => `${c} = excluded.${c}`).join(', ')
+        // For settings (single-row config), use COALESCE so a null from remote never
+        // overwrites a non-null local value — prevents sync from wiping credentials.
+        const updates = table === 'settings'
+          ? cols.map(c => `${c} = COALESCE(excluded.${c}, ${c})`).join(', ')
+          : cols.map(c => `${c} = excluded.${c}`).join(', ')
         // Convert booleans to 0/1 — SQLite doesn't accept JS booleans
         const vals = cols.map(c => {
           const v = row[c]
