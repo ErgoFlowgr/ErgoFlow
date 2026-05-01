@@ -94,10 +94,6 @@ export default function SettingsPage() {
     if (isElectron) {
       ipc.on('sync:complete', loadOnSync)
       return () => ipc.off('sync:complete', loadOnSync)
-    } else {
-      const handler = () => { void loadOnSync() }
-      window.addEventListener('sync:complete', handler)
-      return () => window.removeEventListener('sync:complete', handler)
     }
   }, [])
 
@@ -105,16 +101,6 @@ export default function SettingsPage() {
     if (!settings) return
     setSaveError(false)
     try {
-      // On Android the virtual keyboard keeps the last typed character in an IME
-      // composition buffer. The Save button's click fires before the IME commits
-      // that character to React state, so it would be silently dropped. Blurring the
-      // active input forces the IME to flush, then we wait one tick for the onChange
-      // to update React state before we read `settings` and write to SQLite.
-      if (!isElectron) {
-        const active = document.activeElement as HTMLElement | null
-        if (active && active !== document.body) active.blur()
-        await new Promise(r => setTimeout(r, 100))
-      }
       await saveSettings({ ...settings, claude_api_key: claudeKey || null })
       if (claudeKey) await platform.setKeychainValue('claude_api_key', claudeKey)
       i18n.changeLanguage(settings.language)
