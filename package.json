@@ -9,7 +9,7 @@
     "start": "node scripts/start-dev.js",
     "build": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "electron:build": "npm run build && npm run build:electron && electron-builder --win && node -e \"const fs=require('fs'),s='C:/Users/Stavros/Desktop/Installers',d='E:/ErgoflowInstaller';fs.mkdirSync(d,{recursive:true});['ErgoflowCraftsmenSetup.exe','ErgoflowCraftsmenSetup.exe.blockmap','latest.yml'].forEach(f=>{fs.copyFileSync(s+'/'+f,d+'/'+f);console.log('Copied:',f)})\"",
+    "electron:build": "npm run build && npm run build:electron && electron-builder --win && node -e \"const fs=require('fs'),s='C:/Users/Stavros/Desktop/Installers',d='D:/ErgoflowInstaller';fs.mkdirSync(d,{recursive:true});['ErgoflowCraftsmenSetup.exe','ErgoflowCraftsmenSetup.exe.blockmap','latest.yml'].forEach(f=>{fs.copyFileSync(s+'/'+f,d+'/'+f);console.log('Copied:',f)})\"",
     "rebuild": "electron-rebuild -f -w better-sqlite3 keytar",
     "preview": "vite preview"
   },

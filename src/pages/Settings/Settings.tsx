@@ -60,13 +60,23 @@ export default function SettingsPage() {
   const handleSyncNow = async () => {
     setSyncStatus('syncing')
     if (isElectron) {
+      const cleanup = () => {
+        ipc.off('sync:complete', onComplete)
+        ipc.off('sync:error', onError)
+      }
       const onComplete = () => {
+        cleanup()
         setSyncStatus('ok')
         loadLastSync()
         setTimeout(() => setSyncStatus('idle'), 3000)
-        ipc.off('sync:complete', onComplete)
+      }
+      const onError = () => {
+        cleanup()
+        setSyncStatus('error')
+        setTimeout(() => setSyncStatus('idle'), 3000)
       }
       ipc.on('sync:complete', onComplete)
+      ipc.on('sync:error', onError)
       ipc.syncNow()
     } else {
       const ok = await syncNow(true)
@@ -94,14 +104,25 @@ export default function SettingsPage() {
 
     const loadOnSync = async () => {
       // Skip if user has unsaved changes OR has any input focused.
-      // On Android the IME keeps a pending character while an input is focused;
-      // calling setSettings() mid-composition cancels that character ("letter deleted").
       if (isDirty.current || isInputFocused()) return
       const s = await getSettings()
       // Re-check after the async fetch — user may have focused/typed during the await
       if (isDirty.current || isInputFocused()) return
       setSettings(s ?? {} as Settings)
-      setInputKey(k => k + 1)
+      // Only remount inputs if DB values differ from what's currently in the DOM —
+      // avoids wiping in-progress typing when a sync:complete fires.
+      const changed =
+        (s?.owner_name ?? '')      !== (ownerNameRef.current?.value ?? '')      ||
+        (s?.owner_last_name ?? '') !== (ownerLastNameRef.current?.value ?? '')  ||
+        (s?.company_name ?? '')    !== (companyNameRef.current?.value ?? '')    ||
+        (s?.work_type ?? '')       !== (workTypeRef.current?.value ?? '')       ||
+        (s?.phone ?? '')           !== (phoneRef.current?.value ?? '')          ||
+        (s?.phone2 ?? '')          !== (phone2Ref.current?.value ?? '')         ||
+        (s?.address ?? '')         !== (addressRef.current?.value ?? '')        ||
+        (s?.company_vat ?? '')     !== (vatRef.current?.value ?? '')            ||
+        (s?.mydata_user_id ?? '')  !== (mydataUserIdRef.current?.value ?? '')   ||
+        (s?.mydata_api_key ?? '')  !== (mydataApiKeyRef.current?.value ?? '')
+      if (changed) setInputKey(k => k + 1)
       try { setCategories(await getCategories()) } catch { /* ignore */ }
     }
     load()

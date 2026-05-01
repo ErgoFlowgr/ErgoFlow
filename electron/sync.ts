@@ -341,8 +341,17 @@ async function pushLocalChanges(url: string, key: string, accessToken: string, o
         res = await fetch(`${endpoint}?id=eq.${item.record_id}`, { method: 'DELETE', headers, signal })
       } else {
         const { synced: _s, ...clean } = record as Record<string, unknown>
-        const enriched = { ...clean, owner_id: ownerId }
-        res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(enriched), signal })
+        let bodyObj: Record<string, unknown>
+        if (item.table_name === 'settings') {
+          // sync_enabled is device-local — never push it to Supabase.
+          // Also exclude null fields so this device can't overwrite another device's data with nulls.
+          const { sync_enabled: _se, ...rest } = clean as Record<string, unknown>
+          bodyObj = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null && v !== undefined))
+          bodyObj['owner_id'] = ownerId
+        } else {
+          bodyObj = { ...clean, owner_id: ownerId }
+        }
+        res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(bodyObj), signal })
       }
 
       if (!res.ok) {
@@ -448,7 +457,8 @@ async function pullRemoteChanges(url: string, key: string, initialToken: string,
         // Skip records with pending local changes — local wins
         if (row['id'] && pendingIds.has(String(row['id']))) continue
 
-        const cols = Object.keys(row).filter(c => SAFE_COL.test(c) && c !== 'owner_id' && localCols.has(c))
+        // sync_enabled is device-local — never let a remote value overwrite it
+      const cols = Object.keys(row).filter(c => SAFE_COL.test(c) && c !== 'owner_id' && localCols.has(c) && !(table === 'settings' && c === 'sync_enabled'))
         if (cols.length === 0) continue
         const placeholders = cols.map(() => '?').join(', ')
         // For settings (single-row config), use COALESCE so a null from remote never
