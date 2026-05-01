@@ -36,9 +36,19 @@ export default function SettingsPage() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
   const isDirty = useRef(false)
-  const settingsRef = useRef<Settings | null>(null)
+  const [inputKey, setInputKey] = useState(0)
 
-  useEffect(() => { settingsRef.current = settings }, [settings])
+  // Uncontrolled refs — React never sets value on these; Android IME types freely
+  const ownerNameRef      = useRef<HTMLInputElement>(null)
+  const ownerLastNameRef  = useRef<HTMLInputElement>(null)
+  const companyNameRef    = useRef<HTMLInputElement>(null)
+  const workTypeRef       = useRef<HTMLInputElement>(null)
+  const phoneRef          = useRef<HTMLInputElement>(null)
+  const phone2Ref         = useRef<HTMLInputElement>(null)
+  const addressRef        = useRef<HTMLInputElement>(null)
+  const vatRef            = useRef<HTMLInputElement>(null)
+  const mydataUserIdRef   = useRef<HTMLInputElement>(null)
+  const mydataApiKeyRef   = useRef<HTMLInputElement>(null)
 
   const loadLastSync = async () => {
     try {
@@ -71,6 +81,7 @@ export default function SettingsPage() {
       try {
         const s = await getSettings()
         setSettings(s ?? {} as Settings)
+        setInputKey(k => k + 1)
         if (!s?.company_name && !s?.owner_name && isElectron) ipc.syncNow()
       } catch { setSettings({} as Settings) }
       try { setCategories(await getCategories()) } catch { /* ignore */ }
@@ -90,6 +101,7 @@ export default function SettingsPage() {
       // Re-check after the async fetch — user may have focused/typed during the await
       if (isDirty.current || isInputFocused()) return
       setSettings(s ?? {} as Settings)
+      setInputKey(k => k + 1)
       try { setCategories(await getCategories()) } catch { /* ignore */ }
     }
     load()
@@ -101,19 +113,28 @@ export default function SettingsPage() {
   }, [])
 
   const save = async () => {
+    if (!settings) return
     setSaveError(false)
+    const str = (ref: React.RefObject<HTMLInputElement | null>) => ref.current?.value ?? ''
+    const nullable = (ref: React.RefObject<HTMLInputElement | null>) => ref.current?.value || null
     try {
-      if (!isElectron) {
-        const active = document.activeElement as HTMLElement | null
-        if (active && active !== document.body) active.blur()
-        await new Promise(r => setTimeout(r, 150))
-      }
-      const current = settingsRef.current
-      if (!current) return
-      await saveSettings({ ...current, claude_api_key: claudeKey || null })
+      await saveSettings({
+        ...settings,
+        owner_name:      str(ownerNameRef)     || null,
+        owner_last_name: str(ownerLastNameRef)  || null,
+        company_name:    str(companyNameRef)    || null,
+        work_type:       str(workTypeRef)       || null,
+        phone:           str(phoneRef)          || null,
+        phone2:          str(phone2Ref)         || null,
+        address:         str(addressRef)        || null,
+        company_vat:     nullable(vatRef),
+        mydata_user_id:  nullable(mydataUserIdRef),
+        mydata_api_key:  nullable(mydataApiKeyRef),
+        claude_api_key:  claudeKey || null,
+      })
       if (claudeKey) await platform.setKeychainValue('claude_api_key', claudeKey)
-      i18n.changeLanguage(current.language)
-      document.documentElement.lang = current.language
+      i18n.changeLanguage(settings.language)
+      document.documentElement.lang = settings.language
       isDirty.current = false
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -138,12 +159,6 @@ export default function SettingsPage() {
 
   const update = (patch: Partial<Settings>) => { isDirty.current = true; setSettings(p => p ? { ...p, ...patch } : p) }
 
-  // On Android, compositionend fires after IME commits (e.g. after autocorrect replacement).
-  // We re-apply the final value so React state matches what's actually in the input.
-  const onCompositionEnd = (key: keyof Settings) => (e: React.CompositionEvent<HTMLInputElement>) => {
-    update({ [key]: (e.target as HTMLInputElement).value } as Partial<Settings>)
-  }
-
   const handleSyncToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const enabled = e.target.checked ? 1 : 0
     await saveSettings({ sync_enabled: enabled })
@@ -159,7 +174,7 @@ export default function SettingsPage() {
           // Supabase win by removing settings from the push queue before the pull.
           // If the user has already entered data locally, keep it in the queue so
           // pendingIds protects it — Supabase's old data won't overwrite what they typed.
-          const hasLocalData = !!(settings?.company_name || settings?.owner_name)
+          const hasLocalData = !!(companyNameRef.current?.value || ownerNameRef.current?.value)
           if (!hasLocalData) {
             try { await db.run('DELETE FROM sync_queue WHERE table_name = ? AND record_id = ?', ['settings', 'main']) } catch { /* ignore */ }
           }
@@ -193,29 +208,26 @@ export default function SettingsPage() {
       <Section title={t('settings.company')}>
         <div className="flex gap-3">
           <Field label={t('settings.firstName')}>
-            <input className="input" value={settings.owner_name ?? ''} onChange={e => update({ owner_name: e.target.value })} onCompositionEnd={onCompositionEnd('owner_name')} />
+            <input key={inputKey} ref={ownerNameRef} className="input" defaultValue={settings.owner_name ?? ''} onInput={() => { isDirty.current = true }} />
           </Field>
           <Field label={t('settings.lastName')}>
-            <input className="input" value={settings.owner_last_name ?? ''} onChange={e => update({ owner_last_name: e.target.value })} onCompositionEnd={onCompositionEnd('owner_last_name')} />
+            <input key={inputKey} ref={ownerLastNameRef} className="input" defaultValue={settings.owner_last_name ?? ''} onInput={() => { isDirty.current = true }} />
           </Field>
         </div>
         <Field label={t('settings.companyName')}>
-          <input className="input" value={settings.company_name ?? ''} onChange={e => update({ company_name: e.target.value })} onCompositionEnd={onCompositionEnd('company_name')} />
+          <input key={inputKey} ref={companyNameRef} className="input" defaultValue={settings.company_name ?? ''} onInput={() => { isDirty.current = true }} />
         </Field>
         <Field label={t('settings.workType')}>
-          <input className="input" value={settings.work_type ?? ''} onChange={e => update({ work_type: e.target.value })} onCompositionEnd={onCompositionEnd('work_type')} placeholder="π.χ. Υδραυλικός, Ηλεκτρολόγος, Ψύξη..." />
+          <input key={inputKey} ref={workTypeRef} className="input" defaultValue={settings.work_type ?? ''} onInput={() => { isDirty.current = true }} placeholder="π.χ. Υδραυλικός, Ηλεκτρολόγος, Ψύξη..." />
         </Field>
         <Field label={t('settings.mobile')}>
-          <input className="input" value={settings.phone ?? ''} onChange={e => update({ phone: e.target.value })} onCompositionEnd={onCompositionEnd('phone')} />
+          <input key={inputKey} ref={phoneRef} className="input" defaultValue={settings.phone ?? ''} onInput={() => { isDirty.current = true }} />
         </Field>
         <Field label={t('settings.landline')}>
-          <input className="input" value={settings.phone2 ?? ''} onChange={e => update({ phone2: e.target.value })} onCompositionEnd={onCompositionEnd('phone2')} />
+          <input key={inputKey} ref={phone2Ref} className="input" defaultValue={settings.phone2 ?? ''} onInput={() => { isDirty.current = true }} />
         </Field>
         <Field label={t('settings.address')}>
-          <input className="input" value={settings.address ?? ''} onChange={e => update({ address: e.target.value })} onCompositionEnd={onCompositionEnd('address')} />
-        </Field>
-        <Field label="ΑΦΜ">
-          <input className="input" value={settings.company_vat ?? ''} onChange={e => update({ company_vat: e.target.value || null })} onCompositionEnd={onCompositionEnd('company_vat')} placeholder="π.χ. 123456789" />
+          <input key={inputKey} ref={addressRef} className="input" defaultValue={settings.address ?? ''} onInput={() => { isDirty.current = true }} />
         </Field>
         <Field label={t('settings.language')}>
           <select className="input" value={settings.language} onChange={e => update({ language: e.target.value as 'el' | 'en' })}>
@@ -306,29 +318,13 @@ export default function SettingsPage() {
           Λάβετε credentials από το <button className="text-brand-400 hover:underline" onClick={() => isElectron ? ipc.openExternal('https://www.aade.gr/mydata') : window.open('https://www.aade.gr/mydata', '_blank')}>aade.gr/mydata</button>.
         </p>
         <Field label="ΑΦΜ Εταιρείας">
-          <input
-            className="input"
-            value={settings.company_vat ?? ''}
-            onChange={e => update({ company_vat: e.target.value || null })}
-            placeholder="π.χ. 123456789"
-          />
+          <input key={inputKey} ref={vatRef} className="input" defaultValue={settings.company_vat ?? ''} onInput={() => { isDirty.current = true }} placeholder="π.χ. 123456789" />
         </Field>
         <Field label="ΑΑΔΕ Username (aade-user-id)">
-          <input
-            className="input"
-            value={settings.mydata_user_id ?? ''}
-            onChange={e => update({ mydata_user_id: e.target.value || null })}
-            placeholder="Το username σας στο ΑΑΔΕ"
-          />
+          <input key={inputKey} ref={mydataUserIdRef} className="input" defaultValue={settings.mydata_user_id ?? ''} onInput={() => { isDirty.current = true }} placeholder="Το username σας στο ΑΑΔΕ" />
         </Field>
         <Field label="myDATA API Key (Ocp-Apim-Subscription-Key)">
-          <input
-            className="input font-mono text-xs"
-            type="password"
-            value={settings.mydata_api_key ?? ''}
-            onChange={e => update({ mydata_api_key: e.target.value || null })}
-            placeholder="Subscription key από το developer portal ΑΑΔΕ"
-          />
+          <input key={inputKey} ref={mydataApiKeyRef} className="input font-mono text-xs" type="password" defaultValue={settings.mydata_api_key ?? ''} onInput={() => { isDirty.current = true }} placeholder="Subscription key από το developer portal ΑΑΔΕ" />
         </Field>
       </Section>
 
