@@ -73,13 +73,19 @@ export default function SettingsPage() {
       try { setCategories(await getCategories()) } catch { /* ignore */ }
       try { setClaudeKey(await platform.getKeychainValue('claude_api_key') ?? '') } catch { /* ignore */ }
     }
+    const isInputFocused = () =>
+      document.activeElement instanceof HTMLInputElement ||
+      document.activeElement instanceof HTMLTextAreaElement ||
+      document.activeElement instanceof HTMLSelectElement
+
     const loadOnSync = async () => {
-      if (isDirty.current) return
-      // Fetch fresh data — check isDirty again after the async call because the user
-      // may have started typing while getSettings() was in flight (race condition that
-      // causes typed characters to disappear when a sync:complete fires mid-keystroke)
+      // Skip if user has unsaved changes OR has any input focused.
+      // On Android the IME keeps a pending character while an input is focused;
+      // calling setSettings() mid-composition cancels that character ("letter deleted").
+      if (isDirty.current || isInputFocused()) return
       const s = await getSettings()
-      if (isDirty.current) return
+      // Re-check after the async fetch — user may have focused/typed during the await
+      if (isDirty.current || isInputFocused()) return
       setSettings(s ?? {} as Settings)
       try { setCategories(await getCategories()) } catch { /* ignore */ }
     }
@@ -99,6 +105,16 @@ export default function SettingsPage() {
     if (!settings) return
     setSaveError(false)
     try {
+      // On Android the virtual keyboard keeps the last typed character in an IME
+      // composition buffer. The Save button's click fires before the IME commits
+      // that character to React state, so it would be silently dropped. Blurring the
+      // active input forces the IME to flush, then we wait one tick for the onChange
+      // to update React state before we read `settings` and write to SQLite.
+      if (!isElectron) {
+        const active = document.activeElement as HTMLElement | null
+        if (active && active !== document.body) active.blur()
+        await new Promise(r => setTimeout(r, 100))
+      }
       await saveSettings({ ...settings, claude_api_key: claudeKey || null })
       if (claudeKey) await platform.setKeychainValue('claude_api_key', claudeKey)
       i18n.changeLanguage(settings.language)
