@@ -390,11 +390,14 @@ async function pushLocalChanges(url: string, key: string, accessToken: string, o
   return anySuccess && !anyFailure
 }
 
-async function pullRemoteChanges(url: string, key: string, initialToken: string, db: ReturnType<typeof getDb>) {
+async function pullRemoteChanges(url: string, key: string, initialToken: string, db: ReturnType<typeof getDb>): Promise<Set<string>> {
   // Order matters: parent tables before child tables (foreign key constraints)
   const tables = ['settings', 'customers', 'calls', 'categories', 'offers', 'offer_items', 'jobs', 'invoices', 'invoice_items', 'inventory']
   let accessToken = initialToken
   const getHeaders = () => ({ apikey: key, Authorization: `Bearer ${accessToken}` })
+
+  // Records where remote data was newer and won — caller uses this to clean up sync_queue
+  const remoteWon = new Set<string>()
 
   // Disable foreign keys during pull to avoid ordering issues
   try { db.pragma('foreign_keys = OFF') } catch { /* ignore */ }
@@ -440,25 +443,36 @@ async function pullRemoteChanges(url: string, key: string, initialToken: string,
       const rows = (await res.json()) as Record<string, unknown>[]
       if (rows.length === 0) { slog(`[SYNC] Pull ${table}: 0 rows`); continue }
 
-      // Get columns that actually exist in local SQLite table — skip unknown columns
-      // (if we include a column Supabase has but local doesn't, the entire INSERT fails silently)
       const SAFE_COL = /^[a-z_][a-z0-9_]*$/i
       const tableInfo = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
       const localCols = new Set(tableInfo.map(r => r.name))
 
-      // Build set of record IDs that have pending local changes (not yet pushed)
-      // — these must not be overwritten by a pull
-      const pendingIds = new Set(
-        (db.prepare('SELECT record_id FROM sync_queue WHERE table_name = ?').all(table) as Array<{ record_id: string }>)
+      // Records with a pending local delete — never re-insert them from remote
+      const pendingDeletes = new Set(
+        (db.prepare("SELECT record_id FROM sync_queue WHERE table_name = ? AND operation = 'delete'").all(table) as Array<{ record_id: string }>)
           .map(r => r.record_id)
       )
 
       for (const row of rows) {
-        // Skip records with pending local changes — local wins
-        if (row['id'] && pendingIds.has(String(row['id']))) continue
+        const rowId = row['id'] ? String(row['id']) : null
+
+        // Never re-insert a record the user has deleted locally
+        if (rowId && pendingDeletes.has(rowId)) continue
+
+        // For non-settings tables: timestamp-based conflict resolution.
+        // Remote wins only when its updated_at is strictly newer than local.
+        if (table !== 'settings' && rowId && row['updated_at']) {
+          const localRow = db.prepare(`SELECT updated_at FROM ${table} WHERE id = ?`).get(rowId) as { updated_at: string } | undefined
+          if (localRow?.updated_at && localRow.updated_at >= (row['updated_at'] as string)) {
+            // Local is same or newer — keep local, discard remote
+            continue
+          }
+          // Remote is newer — it will overwrite. Record this for sync_queue cleanup.
+          if (localRow) remoteWon.add(`${table}:${rowId}`)
+        }
 
         // sync_enabled is device-local — never let a remote value overwrite it
-      const cols = Object.keys(row).filter(c => SAFE_COL.test(c) && c !== 'owner_id' && localCols.has(c) && !(table === 'settings' && c === 'sync_enabled'))
+        const cols = Object.keys(row).filter(c => SAFE_COL.test(c) && c !== 'owner_id' && localCols.has(c) && !(table === 'settings' && c === 'sync_enabled'))
         if (cols.length === 0) continue
         const placeholders = cols.map(() => '?').join(', ')
         // For settings (single-row config), use COALESCE so a null from remote never
@@ -502,4 +516,6 @@ async function pullRemoteChanges(url: string, key: string, initialToken: string,
       db.prepare("DELETE FROM sync_meta WHERE key = 'last_pull_at'").run()
     } catch { /* ignore */ }
   }
+
+  return remoteWon
 }
