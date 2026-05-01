@@ -36,6 +36,9 @@ export default function SettingsPage() {
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
   const isDirty = useRef(false)
+  const settingsRef = useRef<Settings | null>(null)
+
+  useEffect(() => { settingsRef.current = settings }, [settings])
 
   const loadLastSync = async () => {
     try {
@@ -98,13 +101,19 @@ export default function SettingsPage() {
   }, [])
 
   const save = async () => {
-    if (!settings) return
     setSaveError(false)
     try {
-      await saveSettings({ ...settings, claude_api_key: claudeKey || null })
+      if (!isElectron) {
+        const active = document.activeElement as HTMLElement | null
+        if (active && active !== document.body) active.blur()
+        await new Promise(r => setTimeout(r, 150))
+      }
+      const current = settingsRef.current
+      if (!current) return
+      await saveSettings({ ...current, claude_api_key: claudeKey || null })
       if (claudeKey) await platform.setKeychainValue('claude_api_key', claudeKey)
-      i18n.changeLanguage(settings.language)
-      document.documentElement.lang = settings.language
+      i18n.changeLanguage(current.language)
+      document.documentElement.lang = current.language
       isDirty.current = false
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
@@ -128,6 +137,12 @@ export default function SettingsPage() {
   }
 
   const update = (patch: Partial<Settings>) => { isDirty.current = true; setSettings(p => p ? { ...p, ...patch } : p) }
+
+  // On Android, compositionend fires after IME commits (e.g. after autocorrect replacement).
+  // We re-apply the final value so React state matches what's actually in the input.
+  const onCompositionEnd = (key: keyof Settings) => (e: React.CompositionEvent<HTMLInputElement>) => {
+    update({ [key]: (e.target as HTMLInputElement).value } as Partial<Settings>)
+  }
 
   const handleSyncToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const enabled = e.target.checked ? 1 : 0
@@ -178,29 +193,29 @@ export default function SettingsPage() {
       <Section title={t('settings.company')}>
         <div className="flex gap-3">
           <Field label={t('settings.firstName')}>
-            <input className="input" value={settings.owner_name ?? ''} onChange={e => update({ owner_name: e.target.value })} />
+            <input className="input" value={settings.owner_name ?? ''} onChange={e => update({ owner_name: e.target.value })} onCompositionEnd={onCompositionEnd('owner_name')} />
           </Field>
           <Field label={t('settings.lastName')}>
-            <input className="input" value={settings.owner_last_name ?? ''} onChange={e => update({ owner_last_name: e.target.value })} />
+            <input className="input" value={settings.owner_last_name ?? ''} onChange={e => update({ owner_last_name: e.target.value })} onCompositionEnd={onCompositionEnd('owner_last_name')} />
           </Field>
         </div>
         <Field label={t('settings.companyName')}>
-          <input className="input" value={settings.company_name ?? ''} onChange={e => update({ company_name: e.target.value })} />
+          <input className="input" value={settings.company_name ?? ''} onChange={e => update({ company_name: e.target.value })} onCompositionEnd={onCompositionEnd('company_name')} />
         </Field>
         <Field label={t('settings.workType')}>
-          <input className="input" value={settings.work_type ?? ''} onChange={e => update({ work_type: e.target.value })} placeholder="π.χ. Υδραυλικός, Ηλεκτρολόγος, Ψύξη..." />
+          <input className="input" value={settings.work_type ?? ''} onChange={e => update({ work_type: e.target.value })} onCompositionEnd={onCompositionEnd('work_type')} placeholder="π.χ. Υδραυλικός, Ηλεκτρολόγος, Ψύξη..." />
         </Field>
         <Field label={t('settings.mobile')}>
-          <input className="input" value={settings.phone ?? ''} onChange={e => update({ phone: e.target.value })} />
+          <input className="input" value={settings.phone ?? ''} onChange={e => update({ phone: e.target.value })} onCompositionEnd={onCompositionEnd('phone')} />
         </Field>
         <Field label={t('settings.landline')}>
-          <input className="input" value={settings.phone2 ?? ''} onChange={e => update({ phone2: e.target.value })} />
+          <input className="input" value={settings.phone2 ?? ''} onChange={e => update({ phone2: e.target.value })} onCompositionEnd={onCompositionEnd('phone2')} />
         </Field>
         <Field label={t('settings.address')}>
-          <input className="input" value={settings.address ?? ''} onChange={e => update({ address: e.target.value })} />
+          <input className="input" value={settings.address ?? ''} onChange={e => update({ address: e.target.value })} onCompositionEnd={onCompositionEnd('address')} />
         </Field>
         <Field label="ΑΦΜ">
-          <input className="input" value={settings.company_vat ?? ''} onChange={e => update({ company_vat: e.target.value || null })} placeholder="π.χ. 123456789" />
+          <input className="input" value={settings.company_vat ?? ''} onChange={e => update({ company_vat: e.target.value || null })} onCompositionEnd={onCompositionEnd('company_vat')} placeholder="π.χ. 123456789" />
         </Field>
         <Field label={t('settings.language')}>
           <select className="input" value={settings.language} onChange={e => update({ language: e.target.value as 'el' | 'en' })}>
