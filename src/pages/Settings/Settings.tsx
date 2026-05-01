@@ -88,14 +88,20 @@ export default function SettingsPage() {
 
   useEffect(() => {
     const load = async () => {
+      let s: Awaited<ReturnType<typeof getSettings>> | null = null
       try {
-        const s = await getSettings()
+        s = await getSettings()
         setSettings(s ?? {} as Settings)
         setInputKey(k => k + 1)
         if (!s?.company_name && !s?.owner_name && isElectron) ipc.syncNow()
       } catch { setSettings({} as Settings) }
       try { setCategories(await getCategories()) } catch { /* ignore */ }
-      try { setClaudeKey(await platform.getKeychainValue('claude_api_key') ?? '') } catch { /* ignore */ }
+      try {
+        const keychainKey = await platform.getKeychainValue('claude_api_key')
+        const key = keychainKey || s?.claude_api_key || ''
+        setClaudeKey(key)
+        if (!keychainKey && key) await platform.setKeychainValue('claude_api_key', key).catch(() => {})
+      } catch { /* ignore */ }
     }
     const isInputFocused = () =>
       document.activeElement instanceof HTMLInputElement ||
