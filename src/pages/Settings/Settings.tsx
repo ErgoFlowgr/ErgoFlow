@@ -74,9 +74,14 @@ export default function SettingsPage() {
       try { setClaudeKey(await platform.getKeychainValue('claude_api_key') ?? '') } catch { /* ignore */ }
     }
     const loadOnSync = async () => {
-      // Don't reload form while user has unsaved changes — would clear what they're typing
       if (isDirty.current) return
-      await load()
+      // Fetch fresh data — check isDirty again after the async call because the user
+      // may have started typing while getSettings() was in flight (race condition that
+      // causes typed characters to disappear when a sync:complete fires mid-keystroke)
+      const s = await getSettings()
+      if (isDirty.current) return
+      setSettings(s ?? {} as Settings)
+      try { setCategories(await getCategories()) } catch { /* ignore */ }
     }
     load()
     loadLastSync()
