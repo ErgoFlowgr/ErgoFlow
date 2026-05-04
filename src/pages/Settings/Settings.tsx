@@ -362,10 +362,10 @@ export default function SettingsPage() {
         </p>
         <label className="flex items-center justify-between py-1 cursor-pointer">
           <div>
-            <span className="text-sm text-gray-300">Αυτόματο backup στους servers Ergoflow</span>
+            <span className="text-sm text-gray-300">Αυτόματος συγχρονισμός</span>
             <p className="text-xs text-gray-500 mt-0.5">
               {settings.sync_enabled
-                ? 'Τα δεδομένα ανεβαίνουν αυτόματα στους servers Ergoflow'
+                ? 'Τα δεδομένα συγχρονίζονται αυτόματα με τους servers Ergoflow'
                 : 'Ανενεργό — τα δεδομένα υπάρχουν μόνο σε αυτή τη συσκευή'}
             </p>
           </div>
@@ -379,16 +379,16 @@ export default function SettingsPage() {
         {!settings.sync_enabled && (
           <div className="flex items-start gap-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
             <span className="text-yellow-500 text-sm mt-0.5">⚠</span>
-            <p className="text-xs text-yellow-400">Χωρίς backup. Αν χαθεί ή χαλάσει η συσκευή, τα δεδομένα δεν ανακτώνται.</p>
+            <p className="text-xs text-yellow-400">Χωρίς συγχρονισμό. Αν χαθεί ή χαλάσει η συσκευή, τα δεδομένα δεν ανακτώνται.</p>
           </div>
         )}
         <div className="flex items-center justify-between pt-2 border-t border-surface-600">
           <div>
-            <p className="text-sm text-gray-300">Τελευταίο backup</p>
+            <p className="text-sm text-gray-300">Τελευταίος συγχρονισμός</p>
             <p className="text-xs text-gray-500 mt-0.5">
               {settings.sync_enabled
                 ? (lastSyncAt ? new Date(lastSyncAt).toLocaleString('el-GR') : 'Δεν έχει γίνει ακόμη')
-                : 'Το backup είναι ανενεργό'}
+                : 'Ο συγχρονισμός είναι ανενεργός'}
             </p>
           </div>
           <button
@@ -401,12 +401,12 @@ export default function SettingsPage() {
             }`}
             disabled={!settings.sync_enabled || syncStatus === 'syncing'}
             onClick={handleSyncNow}
-            title={!settings.sync_enabled ? 'Ενεργοποιήστε πρώτα το backup' : undefined}
+            title={!settings.sync_enabled ? 'Ενεργοποιήστε πρώτα τον συγχρονισμό' : undefined}
           >
-            {syncStatus === 'syncing' ? 'Ανέβασμα...' :
+            {syncStatus === 'syncing' ? 'Συγχρονισμός...' :
              syncStatus === 'ok' ? '✓ Ολοκληρώθηκε' :
              syncStatus === 'error' ? '✗ Σφάλμα' :
-             'Backup τώρα'}
+             'Συγχρονισμός τώρα'}
           </button>
         </div>
         {platform.isMobile && (

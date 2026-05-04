@@ -219,11 +219,11 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
             </div>
           )}
 
-          {/* Cloud backup — shows real state (can't sync when offline) */}
+          {/* Cloud sync status */}
           <div className="flex items-center gap-1.5 text-xs">
             <span className={`w-2 h-2 rounded-full shrink-0 ${syncEnabled && isOnline ? (syncPulse ? 'bg-brand-500 animate-pulse' : 'bg-brand-500/70') : 'bg-gray-600'}`} />
             <span className={syncEnabled && isOnline ? 'text-gray-500' : 'text-gray-600'}>
-              {!syncEnabled ? 'Cloud Backup ανενεργό' : !isOnline ? 'Cloud Backup (offline)' : 'Cloud Backup ενεργό'}
+              {!syncEnabled ? 'Sync ανενεργός' : !isOnline ? 'Sync (offline)' : 'Sync ενεργός'}
             </span>
           </div>
 

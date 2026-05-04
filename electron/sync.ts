@@ -387,6 +387,23 @@ async function pushLocalChanges(url: string, key: string, accessToken: string, o
         continue
       }
 
+      // For deletes: insert a tombstone so other devices learn about this deletion
+      if (item.operation === 'delete') {
+        try {
+          await fetch(`${url}/rest/v1/deleted_records`, {
+            method: 'POST',
+            headers: { ...headers, Prefer: 'resolution=merge-duplicates' },
+            body: JSON.stringify({
+              owner_id: ownerId,
+              table_name: item.table_name,
+              record_id: item.record_id,
+              deleted_at: new Date().toISOString(),
+            }),
+            signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+          })
+        } catch { /* tombstone failure is non-fatal */ }
+      }
+
       db.prepare('DELETE FROM sync_queue WHERE id = ?').run(item.id)
       db.prepare(`UPDATE ${item.table_name} SET synced = 1 WHERE id = ?`).run(item.record_id)
       anySuccess = true
@@ -512,6 +529,33 @@ async function pullRemoteChanges(url: string, key: string, initialToken: string,
 
   // Re-enable foreign keys
   try { db.pragma('foreign_keys = ON') } catch { /* ignore */ }
+
+  // Apply remote deletions — only on incremental pulls (not first-ever sync)
+  // On first sync lastPull is null; Supabase data is already the authoritative current state.
+  if (lastPull) {
+    try {
+      const tombRes = await fetch(
+        `${url}/rest/v1/deleted_records?deleted_at=gte.${lastPull}&select=table_name,record_id`,
+        { headers: getHeaders(), signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) }
+      )
+      if (tombRes.ok) {
+        const tombstones = (await tombRes.json()) as Array<{ table_name: string; record_id: string }>
+        for (const tomb of tombstones) {
+          if (!ALLOWED_SYNC_TABLES.has(tomb.table_name)) continue
+          try {
+            db.prepare(`DELETE FROM ${tomb.table_name} WHERE id = ?`).run(tomb.record_id)
+            db.prepare('DELETE FROM sync_queue WHERE table_name = ? AND record_id = ?').run(tomb.table_name, tomb.record_id)
+            remoteWon.delete(`${tomb.table_name}:${tomb.record_id}`)
+            slog(`[SYNC] Applied remote delete: ${tomb.table_name}/${tomb.record_id}`)
+          } catch (e) {
+            slog(`[SYNC] Failed to apply remote delete: ${String(e).slice(0, 100)}`)
+          }
+        }
+      }
+    } catch (e) {
+      slog('[SYNC] Tombstone fetch error: ' + String(e))
+    }
+  }
 
   // Only update last_pull_at if all tables succeeded — otherwise retry full pull next cycle
   if (!anyFailed) {
