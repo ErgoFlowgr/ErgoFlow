@@ -140,7 +140,11 @@ app.whenReady().then(async () => {
   })
 })
 
-ipcMain.handle('update:install', () => { autoUpdater.quitAndInstall(true, true) })
+ipcMain.handle('update:install', () => {
+  // Destroy all windows first so no file handles remain open when NSIS replaces files
+  BrowserWindow.getAllWindows().forEach(w => w.destroy())
+  autoUpdater.quitAndInstall(false, true)
+})
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
