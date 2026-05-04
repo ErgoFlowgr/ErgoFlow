@@ -355,10 +355,10 @@ export default function SettingsPage() {
         </Field>
       </Section>
 
-      {/* Cloud Backup */}
-      <Section title="Cloud Backup">
+      {/* Cloud Sync */}
+      <Section title="Συγχρονισμός">
         <p className="text-xs text-gray-500 -mt-1 mb-3">
-          Ανεβάζει τα δεδομένα σας στους servers του Ergoflow. Η εφαρμογή λειτουργεί κανονικά και χωρίς internet — αυτό είναι μόνο για backup και χρήση σε πολλές συσκευές.
+          Συγχρονίζει τα δεδομένα σας με τους servers Ergoflow. Η εφαρμογή λειτουργεί κανονικά χωρίς internet — ο συγχρονισμός χρησιμεύει για backup και χρήση σε πολλές συσκευές.
         </p>
         <label className="flex items-center justify-between py-1 cursor-pointer">
           <div>

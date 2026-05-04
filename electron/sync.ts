@@ -213,14 +213,24 @@ async function doSync(win: BrowserWindow | null) {
     const queue = db.prepare('SELECT * FROM sync_queue').all()
     slog('[SYNC] Queue items: ' + queue.length)
 
-    // 1. Push unsynced local changes to Supabase
-    await pushLocalChanges(supabaseUrl, supabaseKey, accessToken, ownerId, db)
+    // 1. Pull first — remote wins only if its updated_at is newer than local
+    const remoteWon = await pullRemoteChanges(supabaseUrl, supabaseKey, accessToken, db)
 
-    // Re-read token — push may have refreshed it
+    // Drop sync_queue upsert entries for records remote just won —
+    // no point pushing older local data back up
+    for (const entry of remoteWon) {
+      const sep = entry.indexOf(':')
+      const tbl = entry.slice(0, sep)
+      const id  = entry.slice(sep + 1)
+      db.prepare("DELETE FROM sync_queue WHERE table_name = ? AND record_id = ? AND operation != 'delete'").run(tbl, id)
+    }
+
+    // Re-read token — pull may have refreshed it
     const freshToken = getSessionToken() ?? await getSecret('supabase_access_token') ?? accessToken
+    const freshOwnerId = getOwnerIdFromToken(freshToken) ?? ownerId
 
-    // 2. Pull remote changes (e.g. calls from VAPI webhook)
-    await pullRemoteChanges(supabaseUrl, supabaseKey, freshToken, db)
+    // 2. Push local changes that are genuinely newer, then propagate local deletes
+    await pushLocalChanges(supabaseUrl, supabaseKey, freshToken, freshOwnerId, db)
 
     win?.webContents.send('sync:complete', { timestamp: new Date().toISOString() })
     slog('[SYNC] Done')
