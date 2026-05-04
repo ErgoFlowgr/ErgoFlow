@@ -1,16 +1,22 @@
 /**
- * Supabase pull sync for Android (Capacitor).
- * Mirrors the pull logic from electron/sync.ts but uses fetch() + Capacitor SQLite.
+ * Supabase sync for Android (Capacitor).
+ * Mirrors the logic from electron/sync.ts:
+ *   1. Pull first — remote wins only if updated_at is newer than local
+ *   2. Clean sync_queue entries where remote won
+ *   3. Push local changes that are genuinely newer
+ *   4. Apply remote deletions via tombstones (deleted_records table)
  */
 
 import { db } from './db-driver'
 import { platform } from './platform'
 import { getSupabaseConfig } from './electron'
 
-const PULL_TABLES = [
+const SYNC_TABLES = [
   'settings', 'customers', 'calls', 'categories',
   'offers', 'offer_items', 'jobs', 'invoices', 'invoice_items', 'inventory',
 ]
+
+const ALLOWED_SYNC_TABLES = new Set(SYNC_TABLES)
 
 let syncInProgress = false
 
@@ -52,7 +58,6 @@ async function ensureFreshToken(): Promise<string | null> {
 
 export async function syncNow(force = false): Promise<boolean> {
   if (syncInProgress) return false
-  // Respect sync_enabled setting — sync is opt-in
   try {
     const row = await db.get(`SELECT sync_enabled FROM settings WHERE id = ?`, ['main']) as { sync_enabled?: number } | undefined
     if (!row?.sync_enabled) return false
@@ -64,16 +69,35 @@ export async function syncNow(force = false): Promise<boolean> {
     if (force) {
       try { await db.run(`DELETE FROM sync_meta WHERE key = 'last_pull_at'`, []) } catch { /* ignore */ }
     }
+
+    // 1. Pull first — remote wins only if newer
+    let remoteWon = new Set<string>()
     try {
-      await pull(token)
+      remoteWon = await pull(token)
     } catch (e) {
       // Retry once — Android WebView first-request can fail on startup
       console.warn('[sync-mobile] pull failed, retrying in 1.5s:', e)
       await new Promise(r => setTimeout(r, 1500))
-      try { await pull(token) } catch (e2) { console.error('[sync-mobile] pull retry failed:', e2) }
+      try { remoteWon = await pull(token) } catch (e2) { console.error('[sync-mobile] pull retry failed:', e2) }
     }
-    window.dispatchEvent(new CustomEvent('sync:complete'))
+
+    // 2. Drop sync_queue upsert entries for records remote just won
+    for (const entry of remoteWon) {
+      const sep = entry.indexOf(':')
+      const tbl = entry.slice(0, sep)
+      const id  = entry.slice(sep + 1)
+      try {
+        await db.run(
+          `DELETE FROM sync_queue WHERE table_name = ? AND record_id = ? AND operation != 'delete'`,
+          [tbl, id]
+        )
+      } catch { /* ignore */ }
+    }
+
+    // 3. Push local changes that are genuinely newer, then propagate deletes
     try { await push(token) } catch (e) { console.error('[sync-mobile] push error:', e) }
+
+    window.dispatchEvent(new CustomEvent('sync:complete'))
     return true
   } catch (e) {
     console.error('[sync-mobile] error:', e)
@@ -83,9 +107,10 @@ export async function syncNow(force = false): Promise<boolean> {
   }
 }
 
-async function pull(token: string): Promise<void> {
+async function pull(token: string): Promise<Set<string>> {
+  const remoteWon = new Set<string>()
   const config = await getSupabaseConfig()
-  if (!config) return
+  if (!config) return remoteWon
 
   const headers = {
     apikey: config.anonKey,
@@ -101,27 +126,53 @@ async function pull(token: string): Promise<void> {
   const SAFE_COL = /^[a-z_][a-z0-9_]*$/i
   let anyFailed = false
 
-  for (const table of PULL_TABLES) {
+  for (const table of SYNC_TABLES) {
     try {
       const filter = lastPull ? `updated_at=gte.${lastPull}&select=*` : `select=*`
-      const res = await fetch(`${config.url}/rest/v1/${table}?${filter}`, { headers })
+      let res = await fetch(`${config.url}/rest/v1/${table}?${filter}`, { headers })
 
       if (!res.ok) {
-        // If incremental filter failed, retry as full pull
         if (res.status === 400 && lastPull) {
-          const res2 = await fetch(`${config.url}/rest/v1/${table}?select=*`, { headers })
-          if (!res2.ok) { anyFailed = true; continue }
-          await upsertRows(table, await res2.json() as Record<string, unknown>[], SAFE_COL)
+          res = await fetch(`${config.url}/rest/v1/${table}?select=*`, { headers })
+          if (!res.ok) { anyFailed = true; continue }
         } else {
           anyFailed = true
           continue
         }
-      } else {
-        await upsertRows(table, await res.json() as Record<string, unknown>[], SAFE_COL)
       }
+
+      const rows = await res.json() as Record<string, unknown>[]
+      const won = await upsertRows(table, rows, SAFE_COL)
+      for (const id of won) remoteWon.add(`${table}:${id}`)
     } catch (e) {
       console.error(`[sync-mobile] pull ${table}:`, e)
       anyFailed = true
+    }
+  }
+
+  // Apply remote deletions — only on incremental pulls (not first-ever sync)
+  if (lastPull) {
+    try {
+      const tombRes = await fetch(
+        `${config.url}/rest/v1/deleted_records?deleted_at=gte.${lastPull}&select=table_name,record_id`,
+        { headers }
+      )
+      if (tombRes.ok) {
+        const tombstones = await tombRes.json() as Array<{ table_name: string; record_id: string }>
+        for (const tomb of tombstones) {
+          if (!ALLOWED_SYNC_TABLES.has(tomb.table_name)) continue
+          try {
+            await db.run(`DELETE FROM ${tomb.table_name} WHERE id = ?`, [tomb.record_id])
+            await db.run(`DELETE FROM sync_queue WHERE table_name = ? AND record_id = ?`, [tomb.table_name, tomb.record_id])
+            remoteWon.delete(`${tomb.table_name}:${tomb.record_id}`)
+            console.log(`[sync-mobile] applied remote delete: ${tomb.table_name}/${tomb.record_id}`)
+          } catch (e) {
+            console.error(`[sync-mobile] failed to apply remote delete:`, e)
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[sync-mobile] tombstone fetch error:', e)
     }
   }
 
@@ -135,29 +186,48 @@ async function pull(token: string): Promise<void> {
   } else {
     try { await db.run(`DELETE FROM sync_meta WHERE key = 'last_pull_at'`) } catch { /* ignore */ }
   }
+
+  return remoteWon
 }
 
-async function upsertRows(table: string, rows: Record<string, unknown>[], SAFE_COL: RegExp): Promise<void> {
-  if (!rows.length) return
+// Returns set of record IDs (not table:id) where remote was newer and won.
+async function upsertRows(table: string, rows: Record<string, unknown>[], SAFE_COL: RegExp): Promise<Set<string>> {
+  const remoteWon = new Set<string>()
+  if (!rows.length) return remoteWon
 
-  // Get columns that exist in the local table
   const tableInfo = await db.query(`PRAGMA table_info(${table})`) as Array<{ name: string }>
   const localCols = new Set(tableInfo.map(r => r.name))
 
-  // Protect records with pending local changes — don't overwrite them with remote data
-  const pendingRows = await db.query(
-    `SELECT record_id FROM sync_queue WHERE table_name = ?`, [table]
+  // Records with pending local deletes — never re-insert them from remote
+  const pendingDeleteRows = await db.query(
+    `SELECT record_id FROM sync_queue WHERE table_name = ? AND operation = 'delete'`, [table]
   ) as Array<{ record_id: string }>
-  const pendingIds = new Set(pendingRows.map(r => r.record_id))
+  const pendingDeletes = new Set(pendingDeleteRows.map(r => r.record_id))
 
   for (const row of rows) {
-    if (row['id'] && pendingIds.has(String(row['id']))) continue
+    const rowId = row['id'] ? String(row['id']) : null
 
-    const cols = Object.keys(row).filter(c => SAFE_COL.test(c) && c !== 'owner_id' && localCols.has(c))
+    // Never re-insert a record the user has deleted locally
+    if (rowId && pendingDeletes.has(rowId)) continue
+
+    // Timestamp-based conflict resolution for non-settings tables
+    if (table !== 'settings' && rowId && row['updated_at']) {
+      const localRow = await db.get(
+        `SELECT updated_at FROM ${table} WHERE id = ?`, [rowId]
+      ) as { updated_at: string } | undefined
+      if (localRow?.updated_at && localRow.updated_at >= (row['updated_at'] as string)) {
+        continue // Local is same or newer — keep local, discard remote
+      }
+      if (localRow) remoteWon.add(rowId)
+    }
+
+    // sync_enabled is device-local — never let remote overwrite it
+    const cols = Object.keys(row).filter(c =>
+      SAFE_COL.test(c) && c !== 'owner_id' && localCols.has(c) && !(table === 'settings' && c === 'sync_enabled')
+    )
     if (!cols.length) continue
 
     const placeholders = cols.map(() => '?').join(', ')
-    // For settings, use COALESCE so null from remote never overwrites good local data
     const updates = table === 'settings'
       ? cols.map(c => `${c} = COALESCE(excluded.${c}, ${c})`).join(', ')
       : cols.map(c => `${c} = excluded.${c}`).join(', ')
@@ -175,6 +245,8 @@ async function upsertRows(table: string, rows: Record<string, unknown>[], SAFE_C
       console.error(`[sync-mobile] upsert ${table}:`, e)
     }
   }
+
+  return remoteWon
 }
 
 async function push(token: string): Promise<void> {
@@ -211,10 +283,37 @@ async function push(token: string): Promise<void> {
         const record = await db.get(`SELECT * FROM ${item.table_name} WHERE id = ?`, [item.record_id]) as Record<string, unknown> | undefined
         if (!record) { await db.run(`DELETE FROM sync_queue WHERE id = ?`, [item.id]); continue }
         const { synced: _s, ...clean } = record
-        res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ ...clean, owner_id: ownerId }) })
+
+        let bodyObj: Record<string, unknown>
+        if (item.table_name === 'settings') {
+          // sync_enabled is device-local — never push it.
+          // Exclude null fields so this device can't overwrite another device's data with nulls.
+          const { sync_enabled: _se, ...rest } = clean as Record<string, unknown>
+          bodyObj = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null && v !== undefined))
+          bodyObj['owner_id'] = ownerId
+        } else {
+          bodyObj = { ...clean, owner_id: ownerId }
+        }
+
+        res = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(bodyObj) })
       }
 
       if (res.ok) {
+        // For deletes: insert a tombstone so other devices sync the deletion
+        if (item.operation === 'delete') {
+          try {
+            await fetch(`${config.url}/rest/v1/deleted_records`, {
+              method: 'POST',
+              headers,
+              body: JSON.stringify({
+                owner_id: ownerId,
+                table_name: item.table_name,
+                record_id: item.record_id,
+                deleted_at: new Date().toISOString(),
+              }),
+            })
+          } catch { /* tombstone failure is non-fatal */ }
+        }
         await db.run(`DELETE FROM sync_queue WHERE id = ?`, [item.id])
         await db.run(`UPDATE ${item.table_name} SET synced = 1 WHERE id = ?`, [item.record_id])
       }

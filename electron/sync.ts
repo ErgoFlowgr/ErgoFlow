@@ -171,7 +171,11 @@ async function pullOnly(win: BrowserWindow | null) {
     if (!token) token = await refreshAccessToken()
     if (!token) return
     const db = getDb()
-    await pullRemoteChanges(url, key, token, db)
+    const remoteWon = await pullRemoteChanges(url, key, token, db)
+    for (const entry of remoteWon) {
+      const sep = entry.indexOf(':')
+      db.prepare("DELETE FROM sync_queue WHERE table_name = ? AND record_id = ? AND operation != 'delete'").run(entry.slice(0, sep), entry.slice(sep + 1))
+    }
     win?.webContents.send('sync:complete', { timestamp: new Date().toISOString() })
     slog('[SYNC] Pull-only done')
   } catch (err) {
