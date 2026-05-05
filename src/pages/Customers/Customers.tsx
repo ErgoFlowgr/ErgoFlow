@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+﻿import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getCustomers, upsertCustomer, deleteCustomer, deleteCustomers, getCallsByCustomer, type Customer, type Call, uuid } from '../../lib/db'
@@ -68,8 +68,6 @@ export default function Customers() {
   const [customerCalls, setCustomerCalls] = useState<Call[]>([])
   const [saving, setSaving] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
-  const [csvPreview, setCsvPreview] = useState<Partial<Customer>[] | null>(null)
-  const [csvImporting, setCsvImporting] = useState(false)
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
@@ -95,7 +93,7 @@ export default function Customers() {
 
   const closeModal = () => {
     if (isFormDirty()) {
-      const ok = window.confirm('Έχετε αποθηκεύσει τις αλλαγές; Αν κλείσετε θα χαθούν.')
+      const ok = window.confirm('ÎˆÏ‡ÎµÏ„Îµ Î±Ï€Î¿Î¸Î·ÎºÎµÏÏƒÎµÎ¹ Ï„Î¹Ï‚ Î±Î»Î»Î±Î³Î­Ï‚; Î‘Î½ ÎºÎ»ÎµÎ¯ÏƒÎµÏ„Îµ Î¸Î± Ï‡Î±Î¸Î¿ÏÎ½.')
       if (!ok) return
     }
     setShowModal(false)
@@ -142,7 +140,7 @@ export default function Customers() {
       setSavedEditing(null)
       load()
     } catch (e) {
-      alert('Σφάλμα αποθήκευσης: ' + String(e))
+      alert('Î£Ï†Î¬Î»Î¼Î± Î±Ï€Î¿Î¸Î®ÎºÎµÏ…ÏƒÎ·Ï‚: ' + String(e))
     } finally {
       setSaving(false)
     }
@@ -186,91 +184,13 @@ export default function Customers() {
     load()
   }
 
-  const parseCsv = (text: string): Partial<Customer>[] => {
-    // Detect delimiter (comma or semicolon)
-    const delim = text.indexOf(';') !== -1 && text.indexOf(',') === -1 ? ';' : ','
-    const lines = text.split(/\r?\n/).filter(l => l.trim())
-    if (lines.length < 2) return []
-
-    // Parse a single CSV line respecting quoted fields
-    const parseLine = (line: string): string[] => {
-      const fields: string[] = []
-      let cur = '', inQ = false
-      for (let i = 0; i < line.length; i++) {
-        if (line[i] === '"') { inQ = !inQ }
-        else if (line[i] === delim && !inQ) { fields.push(cur.trim()); cur = '' }
-        else cur += line[i]
-      }
-      fields.push(cur.trim())
-      return fields
-    }
-
-    const norm = (s: string) => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-zα-ω0-9]/g, '')
-    const headers = parseLine(lines[0]).map(norm)
-
-    // Map header to Customer field
-    const map = (h: string): keyof Customer | null => {
-      if (/name|fullname|displayname|ονοματ|πελατ/.test(h)) return 'name'
-      if (/firstname|first/.test(h)) return 'first_name'
-      if (/lastname|last|επωνυμ/.test(h)) return 'last_name'
-      if (/company|εταιρ/.test(h)) return 'company_name'
-      if (/^(phone|telephone|τηλεφ|τηλ)$/.test(h)) return 'phone'
-      if (/mobile|cell|κινητ/.test(h)) return 'mobile'
-      if (/email|mail/.test(h)) return 'email'
-      if (/address|διευθ/.test(h)) return 'address'
-      if (/^city$|πολ/.test(h)) return 'city'
-      if (/postal|zip|^τκ$/.test(h)) return 'postal_code'
-      if (/^vat$|^afm$|^αφμ$/.test(h)) return 'vat_number'
-      if (/notes|σημειω/.test(h)) return 'notes'
-      return null
-    }
-
-    const mappings = headers.map(map)
-
-    return lines.slice(1).map(line => {
-      const vals = parseLine(line)
-      const row: Partial<Customer> = { id: uuid() }
-      mappings.forEach((field, i) => {
-        if (field && vals[i]) (row as Record<string, unknown>)[field] = vals[i]
-      })
-      // Build display name if not present
-      if (!row.name) {
-        row.name = [row.first_name, row.last_name].filter(Boolean).join(' ') ||
-          row.company_name || row.phone || row.email || t('customers.unnamed')
-      }
-      return row
-    }).filter(r => r.name && r.name !== t('customers.unnamed'))
-  }
-
-  const handleCsvFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = ev => {
-      const text = ev.target?.result as string
-      const rows = parseCsv(text)
-      if (!rows.length) { alert('Δεν βρέθηκαν επαφές στο αρχείο.'); return }
-      setCsvPreview(rows)
-    }
-    reader.readAsText(file, 'UTF-8')
-    e.target.value = '' // reset so same file can be picked again
-  }
-
-  const importCsv = async () => {
-    if (!csvPreview) return
-    setCsvImporting(true)
-    for (const c of csvPreview) await upsertCustomer(c as Customer)
-    setCsvImporting(false)
-    setCsvPreview(null)
-    load()
-  }
 
   return (
     <div className="flex h-full">
       <div className="flex-1 p-6 overflow-auto">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <h1 className="text-2xl font-bold">{t('customers.title')}</h1>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {selectMode ? (
               <>
                 <button
@@ -297,13 +217,6 @@ export default function Customers() {
               </>
             ) : (
               <>
-                <label className="flex items-center gap-2 px-3 py-2 bg-surface-700 hover:bg-surface-600 text-gray-300 text-sm font-medium rounded-lg transition-colors cursor-pointer">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                  </svg>
-                  Εισαγωγή CSV
-                  <input type="file" accept=".csv" className="hidden" onChange={handleCsvFile} />
-                </label>
                 {customers.length > 0 && (
                   <button
                     onClick={() => setSelectMode(true)}
@@ -374,7 +287,7 @@ export default function Customers() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{c.name}</p>
                     <p className="text-sm text-gray-400 truncate">
-                      {[c.company_name && c.company_name !== c.name ? c.company_name : null, c.phone ?? c.email].filter(Boolean).join(' · ') || '—'}
+                      {[c.company_name && c.company_name !== c.name ? c.company_name : null, c.phone ?? c.email].filter(Boolean).join(' Â· ') || 'â€”'}
                     </p>
                   </div>
                   {!selectMode && (
@@ -487,11 +400,11 @@ export default function Customers() {
                                                         'bg-yellow-900/40 text-yellow-400'
                         }`}>{call.status}</span>
                         <span className="text-xs text-gray-500">
-                          {call.duration_seconds ? `${Math.floor(call.duration_seconds / 60)}m ${call.duration_seconds % 60}s` : '—'}
+                          {call.duration_seconds ? `${Math.floor(call.duration_seconds / 60)}m ${call.duration_seconds % 60}s` : 'â€”'}
                         </span>
                       </div>
                       <p className="text-xs text-gray-400">
-                        {call.started_at ? new Date(call.started_at).toLocaleString() : '—'}
+                        {call.started_at ? new Date(call.started_at).toLocaleString() : 'â€”'}
                       </p>
                       {call.summary && (
                         <p className="text-xs text-gray-300 mt-1.5 line-clamp-2">{call.summary}</p>
@@ -514,7 +427,7 @@ export default function Customers() {
               className="flex-1 py-2 text-sm text-gray-300 hover:text-white border border-surface-600 hover:border-surface-400 rounded-lg transition-colors"
               onClick={() => openEdit(selected)}
             >
-              ✏️ Edit
+              âœï¸ Edit
             </button>
             <button
               className={`px-3 py-2 rounded-lg transition-colors text-sm font-medium ${confirmDelete === selected.id ? 'bg-red-500 text-white' : 'bg-red-500/10 hover:bg-red-500/20 text-red-400'}`}
@@ -570,10 +483,10 @@ export default function Customers() {
                         value={editing.salutation}
                         onChange={field('salutation')}
                       >
-                        <option value="">—</option>
-                        <option value="Κος">Κος</option>
-                        <option value="Κα">Κα</option>
-                        <option value="Δρ">Δρ</option>
+                        <option value="">â€”</option>
+                        <option value="ÎšÎ¿Ï‚">ÎšÎ¿Ï‚</option>
+                        <option value="ÎšÎ±">ÎšÎ±</option>
+                        <option value="Î”Ï">Î”Ï</option>
                       </select>
                       <input className={INPUT} placeholder={t('customers.firstName')} value={editing.first_name} onChange={field('first_name')} />
                       <input className={INPUT} placeholder={t('customers.lastName')} value={editing.last_name} onChange={field('last_name')} />
@@ -649,37 +562,6 @@ export default function Customers() {
           </div>
         </div>
       )}
-      {/* CSV Import Preview Modal */}
-      {csvPreview && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-          <div className="bg-surface-800 rounded-2xl w-full max-w-lg shadow-2xl">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-surface-600">
-              <h2 className="text-base font-semibold text-white">Εισαγωγή επαφών από CSV</h2>
-              <button onClick={() => setCsvPreview(null)} className="text-gray-500 hover:text-white text-xl leading-none">&times;</button>
-            </div>
-            <div className="px-6 py-4">
-              <p className="text-sm text-gray-300 mb-3">Βρέθηκαν <span className="text-white font-semibold">{csvPreview.length}</span> επαφές:</p>
-              <div className="max-h-64 overflow-y-auto space-y-1 mb-4">
-                {csvPreview.map((c, i) => (
-                  <div key={i} className="flex items-center gap-3 px-3 py-2 bg-surface-700 rounded-lg text-sm">
-                    <span className="text-white font-medium truncate flex-1">{c.name}</span>
-                    {c.phone && <span className="text-gray-400 text-xs shrink-0">{c.phone}</span>}
-                    {c.email && <span className="text-gray-400 text-xs shrink-0">{c.email}</span>}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="flex gap-3 px-6 pb-5">
-              <button onClick={() => setCsvPreview(null)} className="flex-1 py-2 text-sm font-medium bg-surface-700 hover:bg-surface-600 text-gray-300 rounded-lg transition-colors">
-                Ακύρωση
-              </button>
-              <button onClick={importCsv} disabled={csvImporting} className="flex-1 py-2 text-sm font-medium bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg transition-colors">
-                {csvImporting ? 'Εισαγωγή...' : `Εισαγωγή ${csvPreview.length} επαφών`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Right-click context menu */}
       {contextMenu && (
@@ -697,7 +579,7 @@ export default function Customers() {
               className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-surface-600 hover:text-white transition-colors"
               onClick={() => { setContextMenu(null); openEdit(contextMenu.customer) }}
             >
-              ✏️ Edit
+              âœï¸ Edit
             </button>
             <div className="border-t border-surface-600 my-1" />
             <button
@@ -721,8 +603,8 @@ export default function Customers() {
               }}
             >
               {selectedIds.has(contextMenu.customer.id) && selectedIds.size > 1
-                ? `🗑 Delete ${selectedIds.size} selected`
-                : '🗑 Delete'}
+                ? `ðŸ—‘ Delete ${selectedIds.size} selected`
+                : 'ðŸ—‘ Delete'}
             </button>
           </div>
         </div>
