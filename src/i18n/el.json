@@ -250,7 +250,12 @@
     "tabOffers": "Προσφορές",
     "tabCalls": "Κλήσεις",
     "viewProfile": "Πλήρες Προφίλ",
-    "notFound": "Ο πελάτης δεν βρέθηκε"
+    "notFound": "Ο πελάτης δεν βρέθηκε",
+    "select": "Επιλογή",
+    "selectAll": "Επιλογή Όλων",
+    "deselectAll": "Αποεπιλογή Όλων",
+    "deleteCount": "Διαγραφή ({{count}})",
+    "deleteConfirm": "Σίγουρα; Διαγραφή {{count}}"
   },
   "chat": {
     "title": "AI Βοηθός Προϊόντων",

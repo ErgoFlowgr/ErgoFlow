@@ -250,7 +250,12 @@
     "tabOffers": "Offers",
     "tabCalls": "Calls",
     "viewProfile": "View Profile",
-    "notFound": "Customer not found"
+    "notFound": "Customer not found",
+    "select": "Select",
+    "selectAll": "Select All",
+    "deselectAll": "Deselect All",
+    "deleteCount": "Delete ({{count}})",
+    "deleteConfirm": "Sure? Delete {{count}}"
   },
   "chat": {
     "title": "AI Product Assistant",
