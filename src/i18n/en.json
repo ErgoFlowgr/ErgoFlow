@@ -255,7 +255,11 @@
     "selectAll": "Select All",
     "deselectAll": "Deselect All",
     "deleteCount": "Delete ({{count}})",
-    "deleteConfirm": "Sure? Delete {{count}}"
+    "deleteConfirm": "Sure? Delete {{count}}",
+    "edit": "Edit",
+    "sure": "Sure?",
+    "callHistory": "Call History",
+    "noCallsYet": "No calls yet"
   },
   "chat": {
     "title": "AI Product Assistant",

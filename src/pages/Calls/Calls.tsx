@@ -64,7 +64,7 @@ export default function Calls() {
         <h1 className="text-2xl font-bold mb-6">{t('calls.title')}</h1>
 
         {/* Stat cards */}
-        <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           {statCards.map(s => (
             <div key={s.label} className="card">
               <p className="text-sm text-gray-400">{s.label}</p>

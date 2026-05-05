@@ -386,9 +386,9 @@ export default function Customers() {
 
             {/* Call history */}
             <div>
-              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">Call History ({customerCalls.length})</p>
+              <p className="text-xs text-gray-400 uppercase tracking-wider mb-2">{t('customers.callHistory')} ({customerCalls.length})</p>
               {customerCalls.length === 0 ? (
-                <p className="text-sm text-gray-500 italic">No calls yet</p>
+                <p className="text-sm text-gray-500 italic">{t('customers.noCallsYet')}</p>
               ) : (
                 <div className="space-y-2">
                   {customerCalls.map(call => (
@@ -434,7 +434,7 @@ export default function Customers() {
               onClick={() => del(selected.id)}
               onBlur={() => setConfirmDelete(null)}
             >
-              {confirmDelete === selected.id ? 'Sure?' : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>}
+              {confirmDelete === selected.id ? t('customers.sure') : <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>}
             </button>
           </div>
         </div>
@@ -453,7 +453,7 @@ export default function Customers() {
             </div>
 
             {/* Two-column form */}
-            <div className="p-6 grid grid-cols-2 gap-8 max-h-[70vh] overflow-y-auto">
+            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 gap-6 max-h-[70vh] overflow-y-auto">
 
               {/* LEFT: Client details */}
               <div>

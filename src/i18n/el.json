@@ -255,7 +255,11 @@
     "selectAll": "Επιλογή Όλων",
     "deselectAll": "Αποεπιλογή Όλων",
     "deleteCount": "Διαγραφή ({{count}})",
-    "deleteConfirm": "Σίγουρα; Διαγραφή {{count}}"
+    "deleteConfirm": "Σίγουρα; Διαγραφή {{count}}",
+    "edit": "Επεξεργασία",
+    "sure": "Σίγουρα;",
+    "callHistory": "Ιστορικό Κλήσεων",
+    "noCallsYet": "Δεν υπάρχουν κλήσεις ακόμα"
   },
   "chat": {
     "title": "AI Βοηθός Προϊόντων",
