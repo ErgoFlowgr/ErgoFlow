@@ -92,7 +92,8 @@ export default function Inventory() {
         </div>
       ) : (
         <div className="bg-surface-800 border border-surface-600 rounded-xl overflow-hidden">
-          <table className="w-full text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[480px] text-sm">
             <thead className="bg-surface-700 border-b border-surface-600">
               <tr>
                 <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">{t('inventory.code')}</th>
@@ -123,6 +124,7 @@ export default function Inventory() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

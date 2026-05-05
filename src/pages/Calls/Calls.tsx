@@ -90,7 +90,8 @@ export default function Calls() {
           </div>
         ) : (
           <div className="card p-0 overflow-hidden">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full min-w-[600px] text-sm">
               <thead>
                 <tr className="border-b border-surface-600 text-gray-400">
                   <th className="text-left px-4 py-3 font-medium">{t('calls.caller')}</th>
@@ -136,6 +137,7 @@ export default function Calls() {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </div>
