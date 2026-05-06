@@ -9,8 +9,8 @@
     "start": "node scripts/start-dev.js",
     "build": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "electron:build": "npm run build && npm run build:electron && electron-builder --win && node -e \"const fs=require('fs'),s='C:/Users/Stavros/Desktop/Installers',d='D:/ErgoflowInstaller';fs.mkdirSync(d,{recursive:true});['ErgoflowCraftsmenSetup.exe','ErgoflowCraftsmenSetup.exe.blockmap','latest.yml'].forEach(f=>{fs.copyFileSync(s+'/'+f,d+'/'+f);console.log('Copied:',f)})\"",
-    "android:build": "npm run build && npx cap sync android && cd android && gradlew assembleRelease && cd .. && node -e \"const fs=require('fs'),v=require('./package.json').version,src='android/app/build/outputs/apk/release/app-release.apk',name='ErgoflowCraftsmen-'+v+'.apk',desk='C:/Users/Stavros/Desktop/Installers',d='D:/ErgoflowInstaller';fs.mkdirSync(desk,{recursive:true});fs.mkdirSync(d,{recursive:true});fs.copyFileSync(src,desk+'/'+name);fs.copyFileSync(src,d+'/'+name);console.log('APK copied:',name)\"",
+    "electron:build": "npm run build && npm run build:electron && electron-builder --win && node -e \"const fs=require('fs'),s='C:/Users/Stavros/Desktop/Installers',d='E:/ErgoflowInstaller';fs.mkdirSync(d,{recursive:true});['ErgoflowCraftsmenSetup.exe','ErgoflowCraftsmenSetup.exe.blockmap','latest.yml'].forEach(f=>{fs.copyFileSync(s+'/'+f,d+'/'+f);console.log('Copied:',f)})\"",
+    "android:build": "npm run build && npx cap sync android && cd android && gradlew assembleRelease && cd .. && node -e \"const fs=require('fs'),v=require('./package.json').version,src='android/app/build/outputs/apk/release/app-release.apk',name='ErgoflowCraftsmen-'+v+'.apk',desk='C:/Users/Stavros/Desktop/Installers',e='E:/ErgoflowInstaller';fs.mkdirSync(desk,{recursive:true});fs.mkdirSync(e,{recursive:true});fs.copyFileSync(src,desk+'/'+name);fs.copyFileSync(src,e+'/'+name);console.log('APK copied:',name)\"",
     "rebuild": "electron-rebuild -f -w better-sqlite3 keytar",
     "preview": "vite preview"
   },

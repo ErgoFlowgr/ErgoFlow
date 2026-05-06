@@ -469,7 +469,8 @@ ipcMain.handle('mydata:submit', async (_e, params: {
       vatAmount,
       totalValue,
       paymentAmount: totalValue,
-      nspCode: '001',
+      nspCode: '01',
+      terminalId: 'EF-001',
     }
 
     const signRes = await net.fetch(`${BRATNET_BASE_URL}/createSimSign`, {
@@ -486,16 +487,19 @@ ipcMain.handle('mydata:submit', async (_e, params: {
       return { success: false, error: `Bratnet createSimSign error HTTP ${signRes.status}: ${errText}` }
     }
 
-    const signData = await signRes.json() as { tidNsp?: string; signature?: string; error?: string }
-    const tidNsp = signData.tidNsp ?? signData.signature ?? ''
-    if (!tidNsp) {
-      return { success: false, error: `Bratnet createSimSign: no signature in response: ${JSON.stringify(signData)}` }
+    const signData = await signRes.json() as { hSignature?: string; error?: string }
+    const hSignature = signData.hSignature ?? ''
+    if (!hSignature) {
+      return { success: false, error: `Bratnet createSimSign: no hSignature in response: ${JSON.stringify(signData)}` }
     }
 
     // ── Step 2: sendSimInvoice ───────────────────────────────────────────
     // Build invoice details lines; last line absorbs rounding remainder
     const taxRate       = netValue > 0 ? vatAmount / netValue : 0
     const discountFactor = invoice.subtotal > 0 ? netValue / invoice.subtotal : 1
+    const vatRatePercent = Math.round(taxRate * 100)
+    // Map tax rate % to vatCategory: 24→1, 13→2, 6→3, 0→4
+    const vatCategory = vatRatePercent >= 24 ? 1 : vatRatePercent >= 13 ? 2 : vatRatePercent >= 6 ? 3 : 4
     let netAccum = 0
     let vatAccum = 0
     const invoiceDetails = lineItems.map((item, idx) => {
@@ -511,48 +515,59 @@ ipcMain.handle('mydata:submit', async (_e, params: {
         vatAccum += lineVat
       }
       return {
-        description: item.description || 'Υπηρεσία',
+        lineNumber: idx + 1,
+        code: 'SRV',
+        name: item.description || 'Υπηρεσία',
         quantity: item.quantity,
-        unitPrice: Math.round(item.unit_price * discountFactor * 100) / 100,
-        lineAmount: lineNet,
-        vatRate: Math.round(taxRate * 100),
+        price: Math.round(item.unit_price * discountFactor * 100) / 100,
+        netValue: lineNet,
+        vatCategory,
+        vatPercent: vatRatePercent,
         vatAmount: lineVat,
+        measurementUnitName: 'ΤΕΜ',
       }
     })
 
-    const vatRatePercent = Math.round(taxRate * 100)
     const sendPayload = {
-      tidNsp,
-      isUnsigned: false,
-      issuer: {
-        vatNumber: companyVat,
-        country: 'GR',
-        branch: 0,
-      },
-      counterpart: {
-        vatNumber: customerVat || '000000000',
-        country: 'GR',
-        branch: 0,
-        address: { postalCode: '00000', city: '' },
-      },
-      invoiceHeader: {
-        series,
-        aa,
-        externalSystemId,
-        issueDate,
-        issueTime,
-        invoiceType: '1.1',
-        currency: 'EUR',
-      },
-      paymentMethods: [{ type: 3, amount: totalValue }],
-      invoiceDetails,
-      invoiceSummary: {
-        totalNetValue: netValue,
-        totalVatAmount: vatAmount,
-        totalGrossValue: totalValue,
-      },
-      invoiceVatAnalysis: [
-        { vatRate: vatRatePercent, netValue, vatAmount },
+      invoice: [
+        {
+          issuer: {
+            vatNumber: companyVat,
+            country: 'GR',
+            branch: 0,
+          },
+          counterpart: {
+            vatNumber: customerVat || '000000000',
+            country: 'GR',
+            branch: 0,
+            address: { postalCode: '00000', city: '' },
+          },
+          invoiceHeader: {
+            series,
+            aa,
+            externalSystemId,
+            issueDate,
+            issueTime,
+            invoiceType: '1.1',
+            currency: 'EUR',
+          },
+          paymentMethods: [{ type: 3, amount: totalValue }],
+          invoiceDetails,
+          invoiceSummary: {
+            totalNetValue: netValue,
+            totalVatAmount: vatAmount,
+            totalGrossValue: totalValue,
+          },
+          invoiceVatAnalysis: [
+            { vatRate: vatRatePercent, netValue, vatAmount },
+          ],
+          extra: {
+            signature: hSignature,
+            transactionId: externalSystemId,
+            tipAmount: 0,
+            nspCode: '01',
+          },
+        },
       ],
     }
 
@@ -570,8 +585,8 @@ ipcMain.handle('mydata:submit', async (_e, params: {
       return { success: false, error: `Bratnet sendSimInvoice error HTTP ${sendRes.status}: ${errText}` }
     }
 
-    const sendData = await sendRes.json() as { mark?: string | number; invoiceMark?: string | number; error?: string }
-    const mark = String(sendData.mark ?? sendData.invoiceMark ?? '')
+    const sendData = await sendRes.json() as { responses?: Array<{ invoiceMark?: string | number }>; error?: string }
+    const mark = String(sendData.responses?.[0]?.invoiceMark ?? '')
     if (!mark) {
       return { success: false, error: `Bratnet sendSimInvoice: no MARK in response: ${JSON.stringify(sendData)}` }
     }

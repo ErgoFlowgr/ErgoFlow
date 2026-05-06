@@ -118,7 +118,8 @@ export async function submitToMydata(params: MydataParams): Promise<MydataResult
         vatAmount,
         totalValue:       total,
         paymentAmount:    total,
-        nspCode:          '001',
+        nspCode:          '01',
+        terminalId:       'EF-001',
       }),
     })
 
@@ -127,14 +128,10 @@ export async function submitToMydata(params: MydataParams): Promise<MydataResult
       return { success: false, error: `Bratnet createSimSign HTTP ${signRes.status}: ${body}` }
     }
 
-    const signJson = await signRes.json() as unknown
-    // The API returns the signature string directly or wrapped in a field
-    if (typeof signJson === 'string') {
-      signature = signJson
-    } else if (signJson && typeof signJson === 'object' && 'signature' in signJson) {
-      signature = (signJson as { signature: string }).signature
-    } else {
-      return { success: false, error: `Bratnet createSimSign unexpected response: ${JSON.stringify(signJson)}` }
+    const signJson = await signRes.json() as { hSignature?: string }
+    signature = signJson.hSignature ?? ''
+    if (!signature) {
+      return { success: false, error: `Bratnet createSimSign: no hSignature in response: ${JSON.stringify(signJson)}` }
     }
   } catch (err) {
     return { success: false, error: `Bratnet createSimSign network error: ${err instanceof Error ? err.message : String(err)}` }
@@ -145,6 +142,9 @@ export async function submitToMydata(params: MydataParams): Promise<MydataResult
   // Build per-line details distributing net/vat proportionally
   const discountFactor = invoice.subtotal > 0 ? netValue / invoice.subtotal : 1
   const taxRate        = netValue > 0 ? vatAmount / netValue : 0
+  const vatRatePercent = Math.round(taxRate * 100)
+  // Map tax rate % to vatCategory: 24→1, 13→2, 6→3, 0→4
+  const vatCategory    = vatRatePercent >= 24 ? 1 : vatRatePercent >= 13 ? 2 : vatRatePercent >= 6 ? 3 : 4
   let netAccum = 0
   let vatAccum = 0
 
@@ -161,10 +161,16 @@ export async function submitToMydata(params: MydataParams): Promise<MydataResult
       vatAccum += lineVat
     }
     return {
-      lineNumber:  idx + 1,
-      netValue:    lineNet,
-      vatCategory: 1,
-      vatAmount:   lineVat,
+      lineNumber:          idx + 1,
+      code:                'SRV',
+      name:                item.description || 'Υπηρεσία',
+      quantity:            item.quantity,
+      price:               r2(item.unit_price * discountFactor),
+      netValue:            lineNet,
+      vatCategory,
+      vatPercent:          vatRatePercent,
+      vatAmount:           lineVat,
+      measurementUnitName: 'ΤΕΜ',
     }
   })
 
@@ -172,40 +178,48 @@ export async function submitToMydata(params: MydataParams): Promise<MydataResult
   const counterpartVat = customerVat?.trim() || '000000000'
 
   const sendBody = {
-    tidNsp:     signature,
-    isUnsigned: false,
-    issuer: {
-      vatNumber: companyVat,
-      country:   'GR',
-      branch:    0,
-    },
-    counterpart: {
-      vatNumber: counterpartVat,
-      country:   'GR',
-      branch:    0,
-      address:   { postalCode: '00000', city: '' },
-    },
-    invoiceHeader: {
-      series,
-      aa,
-      externalSystemId: externalId,
-      issueDate,
-      issueTime,
-      invoiceType: '1.1',
-      currency:    'EUR',
-    },
-    paymentMethods: [{ type: 3, amount: total }],
-    invoiceDetails,
-    invoiceSummary: {
-      totalNetValue:   netValue,
-      totalVatAmount:  vatAmount,
-      totalGrossValue: total,
-    },
-    invoiceVatAnalysis: [{
-      vatRate:   24,
-      netValue,
-      vatAmount,
-    }],
+    invoice: [
+      {
+        issuer: {
+          vatNumber: companyVat,
+          country:   'GR',
+          branch:    0,
+        },
+        counterpart: {
+          vatNumber: counterpartVat,
+          country:   'GR',
+          branch:    0,
+          address:   { postalCode: '00000', city: '' },
+        },
+        invoiceHeader: {
+          series,
+          aa,
+          externalSystemId: externalId,
+          issueDate,
+          issueTime,
+          invoiceType: '1.1',
+          currency:    'EUR',
+        },
+        paymentMethods: [{ type: 3, amount: total }],
+        invoiceDetails,
+        invoiceSummary: {
+          totalNetValue:   netValue,
+          totalVatAmount:  vatAmount,
+          totalGrossValue: total,
+        },
+        invoiceVatAnalysis: [{
+          vatRate:   vatRatePercent,
+          netValue,
+          vatAmount,
+        }],
+        extra: {
+          signature:     signature,
+          transactionId: externalId,
+          tipAmount:     0,
+          nspCode:       '01',
+        },
+      },
+    ],
   }
 
   try {
@@ -219,22 +233,15 @@ export async function submitToMydata(params: MydataParams): Promise<MydataResult
       body: JSON.stringify(sendBody),
     })
 
-    const sendJson = await sendRes.json() as unknown
+    const sendJson = await sendRes.json() as { responses?: Array<{ invoiceMark?: string | number }> }
 
     if (!sendRes.ok) {
       return { success: false, error: `Bratnet sendSimInvoice HTTP ${sendRes.status}: ${JSON.stringify(sendJson)}` }
     }
 
-    // Extract MARK — Bratnet returns it in various shapes; handle gracefully
-    let mark: string | undefined
-    if (sendJson && typeof sendJson === 'object') {
-      const obj = sendJson as Record<string, unknown>
-      if (typeof obj['mark'] === 'string' || typeof obj['mark'] === 'number') {
-        mark = String(obj['mark'])
-      } else if (typeof obj['invoiceMark'] === 'string' || typeof obj['invoiceMark'] === 'number') {
-        mark = String(obj['invoiceMark'])
-      }
-    }
+    const mark = sendJson.responses?.[0]?.invoiceMark != null
+      ? String(sendJson.responses[0].invoiceMark)
+      : undefined
 
     if (!mark) {
       return { success: false, error: `Bratnet sendSimInvoice: no MARK in response: ${JSON.stringify(sendJson)}` }
