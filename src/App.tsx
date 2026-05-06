@@ -32,7 +32,7 @@ interface SubscriptionInfo {
   status: string
   daysLeft: number
   trialEnd: string
-  tier: string              // 'trial' | 'basic' | 'plus' | 'pro'
+  tier: string              // 'free' | 'trial' | 'basic' | 'plus' | 'pro'
   vapiMinutesUsed: number
   vapiPhoneNumber: string | null
 }
