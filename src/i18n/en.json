@@ -319,7 +319,11 @@
     "briefingEnabled": "Enable",
     "appBehavior": "App Behavior",
     "minimizeToTray": "Minimize to tray instead of closing",
-    "minimizeToTraySub": "Clicking X hides the app to the system tray. Click the tray icon or right-click → Open to restore."
+    "minimizeToTraySub": "Clicking X hides the app to the system tray. Click the tray icon or right-click → Open to restore.",
+    "companyLogo": "Company Logo",
+    "companyLogoUpload": "Upload logo",
+    "companyLogoRemove": "Remove",
+    "companyLogoHint": "PNG, JPG up to 2MB"
   },
   "onboarding": {
     "step1Title": "Contact Details",

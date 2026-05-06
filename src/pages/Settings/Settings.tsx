@@ -37,6 +37,8 @@ export default function SettingsPage() {
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
   const isDirty = useRef(false)
   const [inputKey, setInputKey] = useState(0)
+  const [logoError, setLogoError] = useState<string | null>(null)
+  const logoInputRef = useRef<HTMLInputElement>(null)
 
   // Uncontrolled refs — React never sets value on these; Android IME types freely
   const ownerNameRef      = useRef<HTMLInputElement>(null)
@@ -189,6 +191,34 @@ export default function SettingsPage() {
 
   const update = (patch: Partial<Settings>) => { isDirty.current = true; setSettings(p => p ? { ...p, ...patch } : p) }
 
+  const handleLogoChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setLogoError(null)
+    if (!file.type.startsWith('image/')) {
+      setLogoError('Επιτρέπονται μόνο εικόνες (PNG, JPG)')
+      return
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError('Το αρχείο υπερβαίνει τα 2MB')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const base64 = reader.result as string
+      update({ company_logo: base64 })
+      await saveSettings({ company_logo: base64 })
+    }
+    reader.readAsDataURL(file)
+    // Reset input so the same file can be re-selected after removal
+    e.target.value = ''
+  }
+
+  const handleLogoRemove = async () => {
+    update({ company_logo: null })
+    await saveSettings({ company_logo: null })
+  }
+
   const handleSyncToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const enabled = e.target.checked ? 1 : 0
     await saveSettings({ sync_enabled: enabled })
@@ -236,6 +266,47 @@ export default function SettingsPage() {
 
       {/* Company */}
       <Section title={t('settings.company')}>
+        {/* Logo */}
+        <div>
+          <label className="label">{t('settings.companyLogo')}</label>
+          <div className="flex items-center gap-3">
+            {settings.company_logo && (
+              <img
+                src={settings.company_logo}
+                alt="Company logo"
+                className="max-h-20 max-w-40 rounded object-contain bg-surface-700 p-1"
+              />
+            )}
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                className="btn-secondary text-sm px-3 py-1.5"
+                onClick={() => logoInputRef.current?.click()}
+              >
+                {t('settings.companyLogoUpload')}
+              </button>
+              {settings.company_logo && (
+                <button
+                  type="button"
+                  className="text-sm text-red-400 hover:text-red-300 transition-colors text-left"
+                  onClick={handleLogoRemove}
+                >
+                  {t('settings.companyLogoRemove')}
+                </button>
+              )}
+              <span className="text-xs text-gray-500">{t('settings.companyLogoHint')}</span>
+              {logoError && <span className="text-xs text-red-400">{logoError}</span>}
+            </div>
+          </div>
+          <input
+            ref={logoInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleLogoChange}
+          />
+        </div>
+
         <div className="flex gap-3">
           <Field label={t('settings.firstName')}>
             <input key={inputKey} ref={ownerNameRef} className="input" defaultValue={settings.owner_name ?? ''} onInput={() => { isDirty.current = true }} />

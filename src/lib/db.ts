@@ -40,6 +40,8 @@ export interface Settings {
   sync_enabled: number
   // Minimize to tray instead of closing
   minimize_to_tray: number
+  // Company logo stored as base64 data URL
+  company_logo: string | null
 }
 
 export async function getSettings(): Promise<Settings> {

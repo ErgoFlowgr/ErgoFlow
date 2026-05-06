@@ -320,6 +320,7 @@ async function runMigrations(conn: any): Promise<void> {
   await tryAlter(`ALTER TABLE settings ADD COLUMN license_status TEXT DEFAULT 'active'`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN license_trial_end TEXT`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN sync_enabled INTEGER DEFAULT 0`)
+  await tryAlter(`ALTER TABLE settings ADD COLUMN company_logo TEXT`)
 
   // Deduplicate sync_queue and add unique index
   try {
