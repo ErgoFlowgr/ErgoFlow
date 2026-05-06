@@ -187,7 +187,7 @@ export default function Customers() {
 
   return (
     <div className="flex h-full">
-      <div className="flex-1 p-6 overflow-auto">
+      <div className="flex-1 p-4 sm:p-6 overflow-auto">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
           <h1 className="text-2xl font-bold">{t('customers.title')}</h1>
           <div className="flex flex-wrap gap-2">
@@ -309,7 +309,7 @@ export default function Customers() {
 
       {/* Detail panel */}
       {selected && (
-        <div className="w-96 border-l border-surface-600 bg-surface-800 flex flex-col overflow-hidden">
+        <div className="fixed inset-0 z-40 sm:relative sm:inset-auto sm:w-96 sm:border-l border-surface-600 bg-surface-800 flex flex-col overflow-hidden">
           <div className="p-5 border-b border-surface-600 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-brand-500/20 flex items-center justify-center text-brand-500 font-bold">
@@ -424,10 +424,10 @@ export default function Customers() {
               {t('customers.viewProfile')}
             </button>
             <button
-              className="flex-1 py-2 text-sm text-gray-300 hover:text-white border border-surface-600 hover:border-surface-400 rounded-lg transition-colors"
+              className="flex-1 py-2 flex items-center justify-center text-gray-300 hover:text-white border border-surface-600 hover:border-surface-400 rounded-lg transition-colors"
               onClick={() => openEdit(selected)}
             >
-              âœï¸ Edit
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
             </button>
             <button
               className={`px-3 py-2 rounded-lg transition-colors text-sm font-medium ${confirmDelete === selected.id ? 'bg-red-500 text-white' : 'bg-red-500/10 hover:bg-red-500/20 text-red-400'}`}
@@ -579,7 +579,7 @@ export default function Customers() {
               className="w-full text-left px-4 py-2 text-sm text-gray-300 hover:bg-surface-600 hover:text-white transition-colors"
               onClick={() => { setContextMenu(null); openEdit(contextMenu.customer) }}
             >
-              âœï¸ Edit
+              {t('customers.edit')}
             </button>
             <div className="border-t border-surface-600 my-1" />
             <button

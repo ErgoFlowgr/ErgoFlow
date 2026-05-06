@@ -7,7 +7,7 @@ export default function CallDetailPanel({ call, onClose }: Props) {
   const { t } = useTranslation()
 
   return (
-    <div className="w-96 border-l border-surface-600 bg-surface-800 flex flex-col h-full overflow-hidden">
+    <div className="fixed inset-0 z-40 sm:relative sm:inset-auto sm:w-96 sm:border-l border-surface-600 bg-surface-800 flex flex-col overflow-hidden">
       <div className="flex items-center justify-between p-4 border-b border-surface-600">
         <h2 className="font-semibold">{call.customer_name ?? t('calls.caller')}</h2>
         <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">

@@ -242,7 +242,7 @@ export default function Jobs() {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-surface-600 shrink-0">
+      <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-surface-600 shrink-0">
         <div>
           <h1 className="text-lg font-semibold text-white">{t('jobs.title')}</h1>
           <p className="text-xs text-gray-500">{jobs.length} {t('jobs.subtitle')}</p>
@@ -270,7 +270,7 @@ export default function Jobs() {
       )}
 
       {/* Filter tabs — list view only */}
-      {view === 'list' && <div className="flex gap-1 px-6 py-3 border-b border-surface-600 shrink-0">
+      {view === 'list' && <div className="flex gap-1 px-4 sm:px-6 py-3 border-b border-surface-600 overflow-x-auto shrink-0">
         {(['all', 'pending', 'in-progress', 'completed', 'cancelled'] as const).map(s => {
           const labelKey = s === 'all' ? 'filter_all' : s === 'in-progress' ? 'filter_inprogress' : `filter_${s}`
           return (
