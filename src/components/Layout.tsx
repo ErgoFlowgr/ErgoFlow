@@ -131,9 +131,9 @@ export default function Layout({ children, onSignOut, tier = 'free', subscriptio
     const showLabels = allMobileItems.length <= 5
 
     return (
-      <div className="flex flex-col h-screen w-screen overflow-hidden bg-surface-900">
+      <div className="flex flex-col h-screen w-screen bg-surface-900">
         {/* Content area — padded so content doesn't hide under bottom bar */}
-        <main className="flex-1 overflow-auto pb-safe">
+        <main className="flex-1 overflow-auto" style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom))' }}>
           {children}
         </main>
 

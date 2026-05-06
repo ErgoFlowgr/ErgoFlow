@@ -95,9 +95,12 @@ async function buildOfferHtml(off: Offer, items: OfferItem[], settings: Settings
 </style></head><body>
 
 <div class="banner">
-  <div>
-    <div class="banner-company">${company || 'Η Εταιρεία Σας'}</div>
-    ${workType ? `<div style="font-size:12px;opacity:0.8;margin-top:3px">${workType}</div>` : ''}
+  <div style="display:flex;align-items:center;gap:14px">
+    ${settings?.company_logo ? `<img src="${settings.company_logo}" style="max-height:60px;max-width:120px;object-fit:contain;flex-shrink:0" />` : ''}
+    <div>
+      <div class="banner-company">${company || 'Η Εταιρεία Σας'}</div>
+      ${workType ? `<div style="font-size:12px;opacity:0.8;margin-top:3px">${workType}</div>` : ''}
+    </div>
   </div>
   <div style="text-align:right">
     <div class="banner-type">ΠΡΟΣΦΟΡΑ / OFFER</div>
@@ -433,7 +436,7 @@ export default function Offers() {
   const filters: FilterType[] = ['all', 'pending', 'accepted', 'rejected']
 
   return (
-    <div className="p-6 h-full overflow-y-auto overflow-x-hidden">
+    <div className="px-3 py-4 sm:p-6 h-full overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -572,7 +575,7 @@ export default function Offers() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
           <div className="bg-surface-800 border border-surface-600 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-surface-600">
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-600">
               <h2 className="text-lg font-bold">{editing ? editing.number : t('offers.newOffer')}</h2>
               <button className="text-gray-400 hover:text-white" onClick={closeModal}>
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -581,7 +584,7 @@ export default function Offers() {
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="p-4 sm:p-5 space-y-4">
               {/* Row 1: number + status */}
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -794,9 +797,9 @@ export default function Offers() {
             </div>
 
             {/* Footer */}
-            <div className="flex justify-between items-center p-5 border-t border-surface-600">
+            <div className="flex flex-wrap justify-between items-center gap-3 p-4 sm:p-5 border-t border-surface-600">
               <button className="text-gray-400 hover:text-white text-sm" onClick={closeModal}>{t('offers.cancel')}</button>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-2 sm:gap-3">
                 {editing && (
                   <>
                     <button

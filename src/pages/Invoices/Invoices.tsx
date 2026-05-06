@@ -104,9 +104,12 @@ function buildInvoiceHtml(inv: Invoice, items: InvoiceItem[], settings: Settings
 
 <!-- Banner -->
 <div class="banner">
-  <div>
-    <div class="banner-company">${company || 'Η Εταιρεία Σας'}</div>
-    ${workType ? `<div style="font-size:12px;opacity:0.8;margin-top:3px">${workType}</div>` : ''}
+  <div style="display:flex;align-items:center;gap:14px">
+    ${settings?.company_logo ? `<img src="${settings.company_logo}" style="max-height:60px;max-width:120px;object-fit:contain;flex-shrink:0" />` : ''}
+    <div>
+      <div class="banner-company">${company || 'Η Εταιρεία Σας'}</div>
+      ${workType ? `<div style="font-size:12px;opacity:0.8;margin-top:3px">${workType}</div>` : ''}
+    </div>
   </div>
   <div style="text-align:right">
     <div class="banner-type">${docTitle}</div>
