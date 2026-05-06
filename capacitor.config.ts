@@ -7,7 +7,6 @@ const config: CapacitorConfig = {
   // Android: Capacitor will serve the bundled React app
   android: {
     allowMixedContent: false,
-    captureInput: true,
   },
   plugins: {
     // Native HTTP — bypasses CORS for fetch() calls (needed for myDATA and any API without CORS headers)
