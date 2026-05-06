@@ -86,7 +86,8 @@
       "uninstallerIcon": "assets/icon.ico",
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "artifactName": "ErgoflowCraftsmenSetup.exe"
+      "artifactName": "ErgoflowCraftsmenSetup.exe",
+      "include": "build/installer.nsh"
     },
     "publish": {
       "provider": "github",
