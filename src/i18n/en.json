@@ -316,7 +316,10 @@
     "saved": "Saved!",
     "briefing": "Morning Briefing (Overseer)",
     "briefingTime": "Briefing Time",
-    "briefingEnabled": "Enable"
+    "briefingEnabled": "Enable",
+    "appBehavior": "App Behavior",
+    "minimizeToTray": "Minimize to tray instead of closing",
+    "minimizeToTraySub": "Clicking X hides the app to the system tray. Click the tray icon or right-click → Open to restore."
   },
   "onboarding": {
     "step1Title": "Contact Details",

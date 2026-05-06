@@ -16,7 +16,7 @@ export default function LockedFeature({ requiredTier, children }: Props) {
   // Trial and trial-tier users get full access
   if (status === 'trial' || tier === 'trial') return <>{children}</>
 
-  const tiers = ['basic', 'plus', 'pro']
+  const tiers = ['free', 'basic', 'plus', 'pro']
   const userLevel     = tiers.indexOf(tier)
   const requiredLevel = tiers.indexOf(requiredTier)
 
@@ -31,7 +31,10 @@ export default function LockedFeature({ requiredTier, children }: Props) {
       </div>
       <h2 className="text-lg font-semibold mb-2">Απαιτείται αναβάθμιση</h2>
       <p className="text-gray-400 text-sm mb-6 max-w-xs">
-        Αυτή η λειτουργία είναι διαθέσιμη στο πλάνο <span className="text-white font-medium">{TIER_LABELS[requiredTier]}</span>.
+        {tier === 'free'
+          ? <>Είστε στο δωρεάν πλάνο. Αναβαθμίστε στο <span className="text-white font-medium">{TIER_LABELS[requiredTier]}</span> για πρόσβαση σε αυτή τη λειτουργία.</>
+          : <>Αυτή η λειτουργία είναι διαθέσιμη στο πλάνο <span className="text-white font-medium">{TIER_LABELS[requiredTier]}</span>.</>
+        }
       </p>
       <a
         href="https://ergoflow.gr/pricing"

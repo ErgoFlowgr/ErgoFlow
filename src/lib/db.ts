@@ -38,6 +38,8 @@ export interface Settings {
   license_trial_end: string | null
   // Cloud sync opt-in
   sync_enabled: number
+  // Minimize to tray instead of closing
+  minimize_to_tray: number
 }
 
 export async function getSettings(): Promise<Settings> {

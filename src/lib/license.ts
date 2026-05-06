@@ -89,12 +89,11 @@ async function verifyOnline(): Promise<RawSubData | null> {
     let sub = rows[0] ?? null
 
     if (!sub) {
-      // No row yet — first install. Create a trial row.
-      const trialEnd = new Date(Date.now() + 30 * 86400_000).toISOString()
+      // No row yet — first install. Create a free account row.
       const createRes = await fetch(`${config.url}/rest/v1/subscriptions`, {
         method: 'POST',
         headers: { ...headers, Prefer: 'return=representation' },
-        body: JSON.stringify({ user_id: userId, status: 'trial', trial_end: trialEnd, tier: 'trial' }),
+        body: JSON.stringify({ user_id: userId, status: 'active', tier: 'free' }),
         signal: AbortSignal.timeout(8000),
       })
       if (!createRes.ok) return null
@@ -103,16 +102,16 @@ async function verifyOnline(): Promise<RawSubData | null> {
       if (!sub) return null
     }
 
-    const trialEnd  = new Date(sub.trial_end)
-    const now       = Date.now()
-    const daysLeft  = Math.max(0, Math.ceil((trialEnd.getTime() - now) / 86400_000))
-    const effectiveStatus = sub.status === 'trial' && trialEnd.getTime() < now ? 'expired' : sub.status
+    const trialEndDate = sub.trial_end ? new Date(sub.trial_end) : null
+    const now          = Date.now()
+    const daysLeft     = trialEndDate ? Math.max(0, Math.ceil((trialEndDate.getTime() - now) / 86400_000)) : 0
+    const effectiveStatus = sub.status === 'trial' && trialEndDate !== null && trialEndDate.getTime() < now ? 'expired' : sub.status
 
     return {
       status:          effectiveStatus,
       daysLeft,
-      trialEnd:        sub.trial_end,
-      tier:            sub.tier ?? 'basic',
+      trialEnd:        sub.trial_end ?? '',
+      tier:            sub.tier ?? 'free',
       vapiMinutesUsed: sub.vapi_minutes_used ?? 0,
       vapiPhoneNumber: sub.vapi_phone_number ?? null,
     }
@@ -149,7 +148,7 @@ export async function checkLicense(): Promise<LicenseStatus> {
         status:          s.license_status as LicenseStatus['status'],
         daysLeft,
         trialEnd:        s.license_trial_end ?? '',
-        tier:            s.license_tier ?? 'basic',
+        tier:            s.license_tier ?? 'free',
         vapiMinutesUsed: 0,
         vapiPhoneNumber: null,
       }
@@ -159,18 +158,18 @@ export async function checkLicense(): Promise<LicenseStatus> {
       status:          'verification_required',
       daysLeft:        0,
       trialEnd:        s.license_trial_end ?? '',
-      tier:            s.license_tier ?? 'basic',
+      tier:            s.license_tier ?? 'free',
       vapiMinutesUsed: 0,
       vapiPhoneNumber: null,
     }
   }
 
-  // First install — never verified, online failed — give trial access
+  // First install — never verified, online failed — give free access
   return {
-    status:          'trial',
-    daysLeft:        14,
-    trialEnd:        new Date(Date.now() + 14 * 86400_000).toISOString(),
-    tier:            'basic',
+    status:          'active',
+    daysLeft:        0,
+    trialEnd:        '',
+    tier:            'free',
     vapiMinutesUsed: 0,
     vapiPhoneNumber: null,
   }

@@ -33,6 +33,7 @@ interface ElectronAPI {
   getVersion:   () => Promise<string>
   getDataPath:  () => Promise<string>
   subscriptionCheck: () => Promise<{ status: string; daysLeft: number; trialEnd: string; tier: string; vapiMinutesUsed: number; vapiPhoneNumber: string | null }>
+  setMinimizeToTray: (value: boolean) => void
   update: {
     onReady: (cb: () => void) => void
     onError: (cb: (msg: string) => void) => void

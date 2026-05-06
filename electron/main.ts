@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Notification, shell, net, Menu, dialog } from 'electron'
+import { app, BrowserWindow, ipcMain, Notification, shell, net, Menu, Tray, dialog } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import path from 'path'
 import fs from 'fs'
@@ -17,6 +17,47 @@ const SUPA_URL = 'https://ftorwjwcxcgbwwonbcwq.supabase.co'
 const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ0b3J3andjeGNnYnd3b25iY3dxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NDAwNDgsImV4cCI6MjA4OTQxNjA0OH0.3PhQcZYnisEmANFKEJPfbcg4_FIhqhQnH2Mz-hVx7U8'
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+
+// In-memory state — updated via IPC when user toggles the setting
+let minimizeToTray = false
+
+function readMinimizeToTraySetting(): boolean {
+  try {
+    const row = getDb().prepare("SELECT minimize_to_tray FROM settings WHERE id = 'main'").get() as { minimize_to_tray?: number } | undefined
+    return row?.minimize_to_tray === 1
+  } catch { return false }
+}
+
+function createTray() {
+  if (tray) return  // guard against double creation (hot reload in dev)
+  const iconPath = path.join(__dirname, '../build/icon.png')
+  tray = new Tray(iconPath)
+  tray.setToolTip('Ergoflow')
+  const contextMenu = Menu.buildFromTemplate([
+    {
+      label: 'Άνοιγμα',
+      click: () => {
+        mainWindow?.show()
+        mainWindow?.focus()
+      },
+    },
+    { type: 'separator' },
+    {
+      label: 'Έξοδος',
+      click: () => {
+        tray?.destroy()
+        tray = null
+        app.quit()
+      },
+    },
+  ])
+  tray.setContextMenu(contextMenu)
+  tray.on('click', () => {
+    mainWindow?.show()
+    mainWindow?.focus()
+  })
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -103,6 +144,9 @@ app.whenReady().then(async () => {
             "script-src 'self'; " +
             "style-src 'self' 'unsafe-inline'; " +
             "img-src 'self' data: https:; " +
+            // VAPI calls (api.vapi.ai) are made directly from the renderer via fetch.
+            // There are no VAPI IPC handlers in main.ts — tier gating for VAPI features
+            // happens entirely at the React layer via LockedFeature / license tier checks.
             "connect-src 'self' https://*.supabase.co https://api.vapi.ai https://api.anthropic.com; " +
             "font-src 'self' data:;"
           ],
@@ -112,6 +156,16 @@ app.whenReady().then(async () => {
   }
 
   createWindow()
+
+  // Read minimize_to_tray setting and wire up the close handler
+  minimizeToTray = readMinimizeToTraySetting()
+  createTray()
+  mainWindow?.on('close', (event) => {
+    if (minimizeToTray) {
+      event.preventDefault()
+      mainWindow?.hide()
+    }
+  })
 
   // Only start sync worker if user has opted in
   try {
@@ -141,12 +195,16 @@ app.whenReady().then(async () => {
 })
 
 ipcMain.handle('update:install', () => {
+  // Disable tray-hide so window-all-closed fires and the updater can proceed
+  minimizeToTray = false
   // Destroy all windows first so no file handles remain open when NSIS replaces files
   BrowserWindow.getAllWindows().forEach(w => w.destroy())
   autoUpdater.quitAndInstall(false, true)
 })
 
 app.on('window-all-closed', () => {
+  // When minimize-to-tray is active the window is hidden, not closed — don't quit
+  if (minimizeToTray) return
   if (process.platform !== 'darwin') app.quit()
 })
 
@@ -203,6 +261,11 @@ ipcMain.handle('db:switch', (_e, tokenOrUserId: string) => {
   if (userId) {
     switchDatabase(userId)
   }
+})
+
+// ── IPC: Settings notifications ───────────────────────────────────────────
+ipcMain.on('settings:minimizeToTray', (_e, value: boolean) => {
+  minimizeToTray = value
 })
 
 ipcMain.handle('sync:now', () => { triggerSync(mainWindow) })
@@ -571,35 +634,34 @@ ipcMain.handle('subscription:check', async () => {
     let sub: SubRow | null = rows[0] ?? null
 
     if (!sub) {
-      // Genuine first install — no row exists yet, create a trial row
-      const trialEnd = new Date(Date.now() + 30 * 86400_000).toISOString()
+      // Genuine first install — no row exists yet, create a free account row
       const createRes = await net.fetch(`${supaUrl}/rest/v1/subscriptions`, {
         method: 'POST',
         headers: { ...headers, 'Prefer': 'return=representation' },
-        body: JSON.stringify({ user_id: userId, status: 'trial', trial_end: trialEnd, tier: 'trial' }),
+        body: JSON.stringify({ user_id: userId, status: 'active', tier: 'free' }),
         signal: AbortSignal.timeout(5000),
       })
       if (createRes.ok) {
         const created = await createRes.json() as Array<SubRow>
-        sub = created[0] ?? { status: 'trial', trial_end: trialEnd, tier: 'trial', vapi_minutes_used: 0, vapi_phone_number: null }
+        sub = created[0] ?? { status: 'active', trial_end: '', tier: 'free', vapi_minutes_used: 0, vapi_phone_number: null }
       } else {
         throw new Error(`subscription create failed: ${createRes.status}`)
       }
     }
 
-    const trialEnd = new Date(sub.trial_end)
+    const trialEndDate = sub.trial_end ? new Date(sub.trial_end) : null
     const now = Date.now()
-    const daysLeft = Math.max(0, Math.ceil((trialEnd.getTime() - now) / 86400_000))
+    const daysLeft = trialEndDate ? Math.max(0, Math.ceil((trialEndDate.getTime() - now) / 86400_000)) : 0
 
     // If still marked as trial but trial has expired, treat as expired
     const effectiveStatus =
-      sub.status === 'trial' && trialEnd.getTime() < now ? 'expired' : sub.status
+      sub.status === 'trial' && trialEndDate !== null && trialEndDate.getTime() < now ? 'expired' : sub.status
 
     return {
       status: effectiveStatus,
       daysLeft,
-      trialEnd: sub.trial_end,
-      tier: sub.tier ?? 'basic',
+      trialEnd: sub.trial_end ?? '',
+      tier: sub.tier ?? 'free',
       vapiMinutesUsed: sub.vapi_minutes_used ?? 0,
       vapiPhoneNumber: sub.vapi_phone_number ?? null,
     }

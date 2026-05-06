@@ -199,7 +199,9 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
             </div>
           ) : (
             <div className="px-1">
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">Basic</span>
+              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-surface-600 text-gray-400">
+                {tier === 'free' ? 'Free' : 'Basic'}
+              </span>
             </div>
           )}
 

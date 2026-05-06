@@ -45,6 +45,7 @@ export interface SubscriptionCtx {
   vapiPhoneNumber: string | null
   isPlus: boolean
   isPro: boolean
+  isFree: boolean
 }
 
 export const SubscriptionContext = createContext<SubscriptionCtx>({
@@ -54,6 +55,7 @@ export const SubscriptionContext = createContext<SubscriptionCtx>({
   vapiPhoneNumber: null,
   isPlus: false,
   isPro: false,
+  isFree: false,
 })
 
 export default function App() {
@@ -156,6 +158,7 @@ export default function App() {
     vapiPhoneNumber: subscription?.vapiPhoneNumber ?? null,
     isPlus:          ['plus', 'pro'].includes(subscription?.tier ?? ''),
     isPro:           subscription?.tier === 'pro',
+    isFree:          subscription?.tier === 'free',
   }
 
   return (

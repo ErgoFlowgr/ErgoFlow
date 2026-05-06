@@ -301,6 +301,29 @@ export default function SettingsPage() {
       )}
 
 
+      {/* App Behavior (desktop only) */}
+      {isElectron && (
+        <Section title={t('settings.appBehavior')}>
+          <label className="flex items-center justify-between py-1 cursor-pointer">
+            <div>
+              <span className="text-sm text-gray-300">{t('settings.minimizeToTray')}</span>
+              <p className="text-xs text-gray-500 mt-0.5">{t('settings.minimizeToTraySub')}</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={!!settings.minimize_to_tray}
+              onChange={async (e) => {
+                const value = e.target.checked ? 1 : 0
+                update({ minimize_to_tray: value })
+                await saveSettings({ minimize_to_tray: value })
+                ipc.setMinimizeToTray(!!value)
+              }}
+              className="w-4 h-4 accent-brand-500 cursor-pointer"
+            />
+          </label>
+        </Section>
+      )}
+
       {/* Navigation tabs */}
       <Section title={t('settings.navigation')}>
         <p className="text-xs text-gray-500 mb-3">{t('settings.navigationHint')}</p>

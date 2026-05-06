@@ -52,6 +52,9 @@ contextBridge.exposeInMainWorld('electron', {
   // Subscription / license check
   subscriptionCheck: () => ipcRenderer.invoke('subscription:check'),
 
+  // Notify main process of minimize-to-tray setting change (no reply needed)
+  setMinimizeToTray: (value: boolean) => ipcRenderer.send('settings:minimizeToTray', value),
+
   // Auto-updater
   update: {
     onReady: (cb: () => void) => ipcRenderer.on('update:ready', () => cb()),
