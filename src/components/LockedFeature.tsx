@@ -1,4 +1,5 @@
 import { useSubscription } from '../App'
+import { isElectron } from '../lib/electron'
 
 interface Props {
   requiredTier: 'plus' | 'pro'
@@ -39,7 +40,7 @@ export default function LockedFeature({ requiredTier, children }: Props) {
       <a
         href="https://ergoflow.gr/pricing"
         className="btn-primary px-6"
-        onClick={e => { e.preventDefault(); window.electron?.openExternal('https://ergoflow.gr/pricing') }}
+        onClick={e => { e.preventDefault(); isElectron ? window.electron?.openExternal('https://ergoflow.gr/pricing') : window.open('https://ergoflow.gr/pricing', '_blank') }}
       >
         Αναβάθμιση τώρα
       </a>
