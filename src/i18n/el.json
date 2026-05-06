@@ -323,7 +323,10 @@
     "companyLogo": "Λογότυπο Εταιρείας",
     "companyLogoUpload": "Ανέβασμα λογότυπου",
     "companyLogoRemove": "Αφαίρεση",
-    "companyLogoHint": "PNG, JPG έως 2MB"
+    "companyLogoHint": "PNG, JPG έως 2MB",
+    "einvoicing": "Ηλεκτρονική Τιμολόγηση",
+    "bratnetUsername": "Bratnet Username",
+    "bratnetApiKey": "Bratnet API Key"
   },
   "onboarding": {
     "step1Title": "Στοιχεία Επικοινωνίας",

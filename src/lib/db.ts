@@ -28,9 +28,11 @@ export interface Settings {
   brave_search_key: string | null
   hidden_tabs: string | null  // JSON array of tab paths e.g. '["calls","invoices"]'
   image_model: string | null
-  company_vat: string | null        // ΑΦΜ εταιρείας for myDATA
-  mydata_user_id: string | null     // ΑΑΔΕ username (aade-user-id)
-  mydata_api_key: string | null     // myDATA Ocp-Apim-Subscription-Key
+  company_vat: string | null        // ΑΦΜ εταιρείας for myDATA / Bratnet
+  mydata_user_id: string | null     // ΑΑΔΕ username (aade-user-id) — legacy
+  mydata_api_key: string | null     // myDATA Ocp-Apim-Subscription-Key — legacy
+  bratnet_username: string | null   // Bratnet e-invoicing username
+  bratnet_api_key: string | null    // Bratnet e-invoicing API key
   // Offline license cache
   license_verified_at: string | null
   license_tier: string | null
@@ -504,11 +506,25 @@ export async function upsertInvoice(inv: Partial<Invoice> & { number: string }, 
 
 export async function submitInvoiceToMydata(inv: Invoice, items: Omit<InvoiceItem, 'invoice_id'>[]): Promise<{ success: boolean; error?: string }> {
   const s = await getSettings()
-  const companyVat   = s?.company_vat   ?? ''
-  const mydataUserId = s?.mydata_user_id ?? ''
-  const mydataApiKey = s?.mydata_api_key ?? ''
+  const companyVat      = s?.company_vat      ?? ''
+  const mydataUserId    = s?.mydata_user_id    ?? ''
+  const mydataApiKey    = s?.mydata_api_key    ?? ''
+  const bratnetUsername = s?.bratnet_username  ?? ''
+  const bratnetApiKey   = s?.bratnet_api_key   ?? ''
 
-  if (!companyVat || !mydataUserId || !mydataApiKey) {
+  const isElectron = typeof window !== 'undefined' && !!window.electron
+
+  // On Electron the IPC handler reads its own credentials; on Android we need Bratnet creds.
+  if (!isElectron && (!companyVat || !bratnetUsername || !bratnetApiKey)) {
+    const err = 'Missing Bratnet credentials. Go to Settings → myDATA / Bratnet.'
+    await db.run(
+      `UPDATE invoices SET mydata_status = 'failed', mydata_error = ?, updated_at = datetime('now') WHERE id = ?`,
+      [err, inv.id]
+    )
+    return { success: false, error: err }
+  }
+
+  if (isElectron && (!companyVat || !mydataUserId || !mydataApiKey)) {
     const err = 'Missing myDATA credentials. Go to Settings → myDATA / ΑΑΔΕ.'
     await db.run(
       `UPDATE invoices SET mydata_status = 'failed', mydata_error = ?, updated_at = datetime('now') WHERE id = ?`,
@@ -542,6 +558,8 @@ export async function submitInvoiceToMydata(inv: Invoice, items: Omit<InvoiceIte
       customerVat,
       mydataUserId,
       mydataApiKey,
+      bratnetUsername: bratnetUsername || undefined,
+      bratnetApiKey:   bratnetApiKey   || undefined,
     })
     if (result.success && result.mark) {
       await db.run(

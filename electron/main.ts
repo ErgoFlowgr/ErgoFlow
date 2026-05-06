@@ -399,9 +399,11 @@ ipcMain.handle('pdf:saveDesktop', async (_e, html: string, filename: string) => 
   return filePath
 })
 
-// ── IPC: myDATA / ΑΑΔΕ invoice submission ────────────────────────────────
-// Dev endpoint: https://mydataapidev.aade.gr/SendInvoices
-// Production:   https://mydataapi.aade.gr/SendInvoices  (switch when going live)
+// ── IPC: Bratnet e-invoicing submission ───────────────────────────────────
+// Sandbox:    https://einvoicing-dev-api.etimologiera.gr/v4  (current)
+// Production: https://einvoicing-api.etimologiera.gr/v4     (switch when going live)
+const BRATNET_BASE_URL = 'https://einvoicing-dev-api.etimologiera.gr/v4'
+
 ipcMain.handle('mydata:submit', async (_e, params: {
   invoice: {
     number: string
@@ -423,129 +425,155 @@ ipcMain.handle('mydata:submit', async (_e, params: {
   mydataApiKey: string
 }) => {
   try {
-    const { invoice, lineItems, companyVat, customerVat, mydataUserId, mydataApiKey } = params
-    // 1.1 = Τιμολόγιο Παροχής Υπηρεσιών, 11.2 = Απόδειξη Παροχής Υπηρεσιών
-    const isReceipt = invoice.document_type === 'receipt'
-    const invoiceType = isReceipt ? '11.2' : '1.1'
-    // Classification differs by type: invoices use goods (1_1/E3_561_001), receipts use services (1_3/E3_561_007)
-    const clsCategory = isReceipt ? 'category1_3' : 'category1_1'
-    const clsType     = isReceipt ? 'E3_561_007'  : 'E3_561_001'
+    const { invoice, lineItems, companyVat, customerVat } = params
 
-    // series = leading letters, aa = trailing digits (must be a plain integer for GR issuers)
-    const seriesMatch = invoice.number.match(/^([A-Za-z]+)/)
-    const aaMatch     = invoice.number.match(/(\d+)$/)
-    const series = seriesMatch ? seriesMatch[1] : 'A'
-    const aa     = aaMatch    ? String(parseInt(aaMatch[1], 10)) : '1'
+    // Read Bratnet credentials directly from settings DB — don't trust what renderer passes
+    const settingsRow = getDb()
+      .prepare("SELECT bratnet_username, bratnet_api_key FROM settings WHERE id = 'main'")
+      .get() as { bratnet_username?: string | null; bratnet_api_key?: string | null } | undefined
 
-    const issueDate = invoice.issue_date ?? new Date().toISOString().slice(0, 10)
+    const bratnetUsername = settingsRow?.bratnet_username ?? ''
+    const bratnetApiKey   = settingsRow?.bratnet_api_key   ?? ''
 
-    // Build invoiceDetails lines.
-    // Net values are post-discount (proportional) so sum of line gross == totalGrossValue.
-    // afterDiscount = total - tax_amount. discountFactor scales each line's net.
-    const afterDiscount = invoice.total - invoice.tax_amount
-    const discountFactor = invoice.subtotal > 0 ? afterDiscount / invoice.subtotal : 1
-    const taxRate = afterDiscount > 0 ? invoice.tax_amount / afterDiscount : 0
-    let netAccum = 0
-    let vatAccum = 0
-    const detailLines = lineItems.map((item, idx) => {
-      let netValue: number
-      let vatAmount: number
-      if (idx === lineItems.length - 1) {
-        // Last line absorbs rounding remainder
-        netValue = Math.round((afterDiscount - netAccum) * 100) / 100
-        vatAmount = Math.round((invoice.tax_amount - vatAccum) * 100) / 100
-      } else {
-        netValue = Math.round(item.total * discountFactor * 100) / 100
-        vatAmount = Math.round(netValue * taxRate * 100) / 100
-        netAccum += netValue
-        vatAccum += vatAmount
-      }
-      return `
-    <invoiceDetails>
-      <lineNumber>${idx + 1}</lineNumber>
-      <netValue>${netValue.toFixed(2)}</netValue>
-      <vatCategory>1</vatCategory>
-      <vatAmount>${vatAmount.toFixed(2)}</vatAmount>
-      <incomeClassification>
-        <icls:classificationType>${clsType}</icls:classificationType>
-        <icls:classificationCategory>${clsCategory}</icls:classificationCategory>
-        <icls:amount>${netValue.toFixed(2)}</icls:amount>
-      </incomeClassification>
-    </invoiceDetails>`
-    }).join('')
-
-    // counterpart required for invoices (1.1), not for receipts (11.2)
-    const counterpartBlock = (!isReceipt && customerVat) ? `
-    <counterpart>
-      <vatNumber>${customerVat}</vatNumber>
-      <country>GR</country>
-      <branch>0</branch>
-    </counterpart>` : ''
-
-    const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<InvoicesDoc xmlns="http://www.aade.gr/myDATA/invoice/v1.0"
-             xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-             xmlns:icls="https://www.aade.gr/myDATA/incomeClassificaton/v1.0"
-             xmlns:ecls="https://www.aade.gr/myDATA/expensesClassificaton/v1.0">
-  <invoice>
-    <issuer>
-      <vatNumber>${companyVat}</vatNumber>
-      <country>GR</country>
-      <branch>0</branch>
-    </issuer>${counterpartBlock}
-    <invoiceHeader>
-      <series>${series}</series>
-      <aa>${aa}</aa>
-      <issueDate>${issueDate}</issueDate>
-      <invoiceType>${invoiceType}</invoiceType>
-      <currency>EUR</currency>
-    </invoiceHeader>
-    <paymentMethods>
-      <paymentMethodDetails>
-        <type>3</type>
-        <amount>${invoice.total.toFixed(2)}</amount>
-      </paymentMethodDetails>
-    </paymentMethods>${detailLines}
-    <invoiceSummary>
-      <totalNetValue>${afterDiscount.toFixed(2)}</totalNetValue>
-      <totalVatAmount>${invoice.tax_amount.toFixed(2)}</totalVatAmount>
-      <totalWithheldAmount>0.00</totalWithheldAmount>
-      <totalFeesAmount>0.00</totalFeesAmount>
-      <totalStampDutyAmount>0.00</totalStampDutyAmount>
-      <totalOtherTaxesAmount>0.00</totalOtherTaxesAmount>
-      <totalDeductionsAmount>0.00</totalDeductionsAmount>
-      <totalGrossValue>${invoice.total.toFixed(2)}</totalGrossValue>
-      <incomeClassification>
-        <icls:classificationType>${clsType}</icls:classificationType>
-        <icls:classificationCategory>${clsCategory}</icls:classificationCategory>
-        <icls:amount>${afterDiscount.toFixed(2)}</icls:amount>
-      </incomeClassification>
-    </invoiceSummary>
-  </invoice>
-</InvoicesDoc>`
-
-    const res = await net.fetch('https://mydataapidev.aade.gr/SendInvoices', {
-      method: 'POST',
-      headers: {
-        'aade-user-id': mydataUserId,
-        'Ocp-Apim-Subscription-Key': mydataApiKey,
-        'Content-Type': 'application/xml',
-      },
-      body: xml,
-    })
-
-    const responseText = await res.text()
-
-    if (!res.ok) {
-      return { success: false, error: `HTTP ${res.status}: ${responseText}` }
+    if (!bratnetUsername || !bratnetApiKey) {
+      return { success: false, error: 'Missing Bratnet credentials. Go to Settings → Ηλεκτρονική Τιμολόγηση.' }
     }
 
-    // Extract ΜΑΡΚ from response XML: <invoiceMark>...</invoiceMark>
-    const markMatch = responseText.match(/<invoiceMark>(\d+)<\/invoiceMark>/)
-    const mark = markMatch ? markMatch[1] : null
+    const authHeader = 'Basic ' + Buffer.from(`${bratnetUsername}:${bratnetApiKey}`).toString('base64')
 
+    // Parse invoice series and sequential number from invoice.number.
+    // Expected format: "ΑΠΥ-2026-001" → series "ΑΠΥ", aa 1
+    // Fallback: series "ΑΠΥ", aa 1
+    const seriesMatch = invoice.number.match(/^([A-Za-zΑ-Ωα-ωΆ-Ώ]+)/)
+    const aaMatch     = invoice.number.match(/(\d+)$/)
+    const series = seriesMatch ? seriesMatch[1] : 'ΑΠΥ'
+    const aa     = aaMatch    ? parseInt(aaMatch[1], 10) : 1
+
+    const issueDate = invoice.issue_date ?? new Date().toISOString().slice(0, 10)
+    const issueTime = '00:00:00'
+
+    const netValue   = Math.round((invoice.total - invoice.tax_amount) * 100) / 100
+    const vatAmount  = Math.round(invoice.tax_amount * 100) / 100
+    const totalValue = Math.round(invoice.total * 100) / 100
+
+    // ── Step 1: createSimSign ────────────────────────────────────────────
+    const externalSystemId = invoice.number  // unique per invoice
+    const createSignPayload = {
+      externalSystemId,
+      issuerVatNumber: companyVat,
+      invoiceIssueDate: issueDate,
+      invoiceIssueTime: issueTime,
+      invoiceType: '1.1',
+      invoiceSeries: series,
+      netValue,
+      vatAmount,
+      totalValue,
+      paymentAmount: totalValue,
+      nspCode: '001',
+    }
+
+    const signRes = await net.fetch(`${BRATNET_BASE_URL}/createSimSign`, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(createSignPayload),
+    })
+
+    if (!signRes.ok) {
+      const errText = await signRes.text()
+      return { success: false, error: `Bratnet createSimSign error HTTP ${signRes.status}: ${errText}` }
+    }
+
+    const signData = await signRes.json() as { tidNsp?: string; signature?: string; error?: string }
+    const tidNsp = signData.tidNsp ?? signData.signature ?? ''
+    if (!tidNsp) {
+      return { success: false, error: `Bratnet createSimSign: no signature in response: ${JSON.stringify(signData)}` }
+    }
+
+    // ── Step 2: sendSimInvoice ───────────────────────────────────────────
+    // Build invoice details lines; last line absorbs rounding remainder
+    const taxRate       = netValue > 0 ? vatAmount / netValue : 0
+    const discountFactor = invoice.subtotal > 0 ? netValue / invoice.subtotal : 1
+    let netAccum = 0
+    let vatAccum = 0
+    const invoiceDetails = lineItems.map((item, idx) => {
+      let lineNet: number
+      let lineVat: number
+      if (idx === lineItems.length - 1) {
+        lineNet = Math.round((netValue - netAccum) * 100) / 100
+        lineVat = Math.round((vatAmount - vatAccum) * 100) / 100
+      } else {
+        lineNet = Math.round(item.total * discountFactor * 100) / 100
+        lineVat = Math.round(lineNet * taxRate * 100) / 100
+        netAccum += lineNet
+        vatAccum += lineVat
+      }
+      return {
+        description: item.description || 'Υπηρεσία',
+        quantity: item.quantity,
+        unitPrice: Math.round(item.unit_price * discountFactor * 100) / 100,
+        lineAmount: lineNet,
+        vatRate: Math.round(taxRate * 100),
+        vatAmount: lineVat,
+      }
+    })
+
+    const vatRatePercent = Math.round(taxRate * 100)
+    const sendPayload = {
+      tidNsp,
+      isUnsigned: false,
+      issuer: {
+        vatNumber: companyVat,
+        country: 'GR',
+        branch: 0,
+      },
+      counterpart: {
+        vatNumber: customerVat || '000000000',
+        country: 'GR',
+        branch: 0,
+        address: { postalCode: '00000', city: '' },
+      },
+      invoiceHeader: {
+        series,
+        aa,
+        externalSystemId,
+        issueDate,
+        issueTime,
+        invoiceType: '1.1',
+        currency: 'EUR',
+      },
+      paymentMethods: [{ type: 3, amount: totalValue }],
+      invoiceDetails,
+      invoiceSummary: {
+        totalNetValue: netValue,
+        totalVatAmount: vatAmount,
+        totalGrossValue: totalValue,
+      },
+      invoiceVatAnalysis: [
+        { vatRate: vatRatePercent, netValue, vatAmount },
+      ],
+    }
+
+    const sendRes = await net.fetch(`${BRATNET_BASE_URL}/sendSimInvoice`, {
+      method: 'POST',
+      headers: {
+        'Authorization': authHeader,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(sendPayload),
+    })
+
+    if (!sendRes.ok) {
+      const errText = await sendRes.text()
+      return { success: false, error: `Bratnet sendSimInvoice error HTTP ${sendRes.status}: ${errText}` }
+    }
+
+    const sendData = await sendRes.json() as { mark?: string | number; invoiceMark?: string | number; error?: string }
+    const mark = String(sendData.mark ?? sendData.invoiceMark ?? '')
     if (!mark) {
-      return { success: false, error: `No ΜΑΡΚ in response: ${responseText}` }
+      return { success: false, error: `Bratnet sendSimInvoice: no MARK in response: ${JSON.stringify(sendData)}` }
     }
 
     return { success: true, mark }

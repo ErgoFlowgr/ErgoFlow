@@ -323,7 +323,10 @@
     "companyLogo": "Company Logo",
     "companyLogoUpload": "Upload logo",
     "companyLogoRemove": "Remove",
-    "companyLogoHint": "PNG, JPG up to 2MB"
+    "companyLogoHint": "PNG, JPG up to 2MB",
+    "einvoicing": "E-Invoicing",
+    "bratnetUsername": "Bratnet Username",
+    "bratnetApiKey": "Bratnet API Key"
   },
   "onboarding": {
     "step1Title": "Contact Details",

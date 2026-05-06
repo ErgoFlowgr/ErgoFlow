@@ -304,6 +304,9 @@ function runMigrations() {
   tryAlter(`ALTER TABLE settings ADD COLUMN minimize_to_tray INTEGER DEFAULT 0`)
   // Company logo (base64 data URL, stored locally — not synced)
   tryAlter(`ALTER TABLE settings ADD COLUMN company_logo TEXT`)
+  // Bratnet e-invoicing credentials
+  tryAlter(`ALTER TABLE settings ADD COLUMN bratnet_username TEXT`)
+  tryAlter(`ALTER TABLE settings ADD COLUMN bratnet_api_key TEXT`)
 
   // Deduplicate sync_queue (keep newest per table+record) and add unique index
   // This fixes a bug where the same record was queued many times, causing sync hammering

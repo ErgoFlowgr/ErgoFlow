@@ -51,6 +51,8 @@ export default function SettingsPage() {
   const vatRef            = useRef<HTMLInputElement>(null)
   const mydataUserIdRef   = useRef<HTMLInputElement>(null)
   const mydataApiKeyRef   = useRef<HTMLInputElement>(null)
+  const bratnetUsernameRef = useRef<HTMLInputElement>(null)
+  const bratnetApiKeyRef   = useRef<HTMLInputElement>(null)
 
   const loadLastSync = async () => {
     try {
@@ -120,16 +122,18 @@ export default function SettingsPage() {
       // Only remount inputs if DB values differ from what's currently in the DOM —
       // avoids wiping in-progress typing when a sync:complete fires.
       const changed =
-        (s?.owner_name ?? '')      !== (ownerNameRef.current?.value ?? '')      ||
-        (s?.owner_last_name ?? '') !== (ownerLastNameRef.current?.value ?? '')  ||
-        (s?.company_name ?? '')    !== (companyNameRef.current?.value ?? '')    ||
-        (s?.work_type ?? '')       !== (workTypeRef.current?.value ?? '')       ||
-        (s?.phone ?? '')           !== (phoneRef.current?.value ?? '')          ||
-        (s?.phone2 ?? '')          !== (phone2Ref.current?.value ?? '')         ||
-        (s?.address ?? '')         !== (addressRef.current?.value ?? '')        ||
-        (s?.company_vat ?? '')     !== (vatRef.current?.value ?? '')            ||
-        (s?.mydata_user_id ?? '')  !== (mydataUserIdRef.current?.value ?? '')   ||
-        (s?.mydata_api_key ?? '')  !== (mydataApiKeyRef.current?.value ?? '')
+        (s?.owner_name ?? '')        !== (ownerNameRef.current?.value ?? '')        ||
+        (s?.owner_last_name ?? '')   !== (ownerLastNameRef.current?.value ?? '')    ||
+        (s?.company_name ?? '')      !== (companyNameRef.current?.value ?? '')      ||
+        (s?.work_type ?? '')         !== (workTypeRef.current?.value ?? '')         ||
+        (s?.phone ?? '')             !== (phoneRef.current?.value ?? '')            ||
+        (s?.phone2 ?? '')            !== (phone2Ref.current?.value ?? '')           ||
+        (s?.address ?? '')           !== (addressRef.current?.value ?? '')          ||
+        (s?.company_vat ?? '')       !== (vatRef.current?.value ?? '')              ||
+        (s?.mydata_user_id ?? '')    !== (mydataUserIdRef.current?.value ?? '')     ||
+        (s?.mydata_api_key ?? '')    !== (mydataApiKeyRef.current?.value ?? '')     ||
+        (s?.bratnet_username ?? '')  !== (bratnetUsernameRef.current?.value ?? '')  ||
+        (s?.bratnet_api_key ?? '')   !== (bratnetApiKeyRef.current?.value ?? '')
       if (changed) setInputKey(k => k + 1)
       try { setCategories(await getCategories()) } catch { /* ignore */ }
     }
@@ -159,10 +163,12 @@ export default function SettingsPage() {
         phone:           str(phoneRef)          || null,
         phone2:          str(phone2Ref)         || null,
         address:         str(addressRef)        || null,
-        company_vat:     nullable(vatRef),
-        mydata_user_id:  nullable(mydataUserIdRef),
-        mydata_api_key:  nullable(mydataApiKeyRef),
-        claude_api_key:  claudeKey || null,
+        company_vat:      nullable(vatRef),
+        mydata_user_id:   nullable(mydataUserIdRef),
+        mydata_api_key:   nullable(mydataApiKeyRef),
+        bratnet_username: nullable(bratnetUsernameRef),
+        bratnet_api_key:  nullable(bratnetApiKeyRef),
+        claude_api_key:   claudeKey || null,
       })
       if (claudeKey) await platform.setKeychainValue('claude_api_key', claudeKey)
       i18n.changeLanguage(settings.language)
@@ -435,21 +441,24 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      {/* myDATA / ΑΑΔΕ */}
-      <Section title="myDATA / ΑΑΔΕ">
+      {/* Ηλεκτρονική Τιμολόγηση (Bratnet) */}
+      <Section title={t('settings.einvoicing')}>
         <p className="text-xs text-gray-500">
-          Συνδεθείτε με το myDATA της ΑΑΔΕ για αυτόματη υποβολή τιμολογίων και απόδοση ΜΑΡΚ.
-          Λάβετε credentials από το <button className="text-brand-400 hover:underline" onClick={() => isElectron ? ipc.openExternal('https://www.aade.gr/mydata') : window.open('https://www.aade.gr/mydata', '_blank')}>aade.gr/mydata</button>.
+          Συνδεθείτε με το σύστημα ηλεκτρονικής τιμολόγησης Bratnet για αυτόματη υποβολή τιμολογίων και απόδοση ΜΑΡΚ.
         </p>
+        {/* ΑΦΜ is shared with the e-invoicing provider */}
         <Field label="ΑΦΜ Εταιρείας">
           <input key={inputKey} ref={vatRef} className="input" defaultValue={settings.company_vat ?? ''} onInput={() => { isDirty.current = true }} placeholder="π.χ. 123456789" />
         </Field>
-        <Field label="ΑΑΔΕ Username (aade-user-id)">
-          <input key={inputKey} ref={mydataUserIdRef} className="input" defaultValue={settings.mydata_user_id ?? ''} onInput={() => { isDirty.current = true }} placeholder="Το username σας στο ΑΑΔΕ" />
+        <Field label={t('settings.bratnetUsername')}>
+          <input key={inputKey} ref={bratnetUsernameRef} className="input" defaultValue={settings.bratnet_username ?? ''} onInput={() => { isDirty.current = true }} placeholder="Bratnet username" />
         </Field>
-        <Field label="myDATA API Key (Ocp-Apim-Subscription-Key)">
-          <input key={inputKey} ref={mydataApiKeyRef} className="input font-mono text-xs" type="password" defaultValue={settings.mydata_api_key ?? ''} onInput={() => { isDirty.current = true }} placeholder="Subscription key από το developer portal ΑΑΔΕ" />
+        <Field label={t('settings.bratnetApiKey')}>
+          <input key={inputKey} ref={bratnetApiKeyRef} className="input font-mono text-xs" type="password" defaultValue={settings.bratnet_api_key ?? ''} onInput={() => { isDirty.current = true }} placeholder="Bratnet API key" />
         </Field>
+        {/* Hidden inputs keep mydata refs mounted so the save function can still null them safely */}
+        <input ref={mydataUserIdRef} type="hidden" defaultValue={settings.mydata_user_id ?? ''} />
+        <input ref={mydataApiKeyRef} type="hidden" defaultValue={settings.mydata_api_key ?? ''} />
       </Section>
 
       {/* Cloud Sync */}
