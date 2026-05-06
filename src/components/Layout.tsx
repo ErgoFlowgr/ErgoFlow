@@ -1,6 +1,6 @@
-import { NavLink, useLocation } from 'react-router-dom'
+import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ipc, isElectron } from '../lib/electron'
 import { getSettings } from '../lib/db'
 
