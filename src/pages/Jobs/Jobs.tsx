@@ -294,7 +294,7 @@ export default function Jobs() {
         <div className="flex-1 flex overflow-hidden">
 
           {/* ── Mini calendar (left panel) ── */}
-          <div className="w-72 shrink-0 p-4 border-r border-surface-600 overflow-auto select-none">
+          <div className="hidden sm:block w-72 shrink-0 p-4 border-r border-surface-600 overflow-auto select-none">
             {/* Month nav */}
             <div className="flex items-center justify-between mb-2">
               <button onClick={() => setCalMonth(new Date(calYear, calMonthNum - 1, 1))} className="p-1 text-gray-400 hover:text-white hover:bg-surface-700 rounded-lg transition-colors"><ChevLeft /></button>
@@ -425,7 +425,7 @@ export default function Jobs() {
       )}
 
       {/* Job list */}
-      {view === 'list' && <div className="flex-1 overflow-auto p-6">
+      {view === 'list' && <div className="flex-1 overflow-auto p-4 sm:p-6">
         {loading ? (
           <div className="flex items-center justify-center h-40">
             <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />

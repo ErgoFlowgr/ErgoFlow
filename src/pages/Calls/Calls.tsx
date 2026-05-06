@@ -60,7 +60,7 @@ export default function Calls() {
 
   return (
     <div className="flex h-full">
-      <div className="flex-1 p-6 overflow-auto">
+      <div className="flex-1 p-4 sm:p-6 overflow-auto">
         <h1 className="text-2xl font-bold mb-6">{t('calls.title')}</h1>
 
         {/* Stat cards */}
