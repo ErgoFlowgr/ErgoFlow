@@ -34,12 +34,11 @@ function AppVersion() {
 interface LayoutProps {
   children: React.ReactNode
   onSignOut?: () => void
-  trialDaysLeft?: number | null
   tier?: string
   subscriptionStatus?: string
 }
 
-export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'basic', subscriptionStatus = 'trial' }: LayoutProps) {
+export default function Layout({ children, onSignOut, tier = 'free', subscriptionStatus = 'active' }: LayoutProps) {
   const { t } = useTranslation()
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [syncPulse, setSyncPulse] = useState(false)
@@ -184,7 +183,7 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
         </nav>
 
         <div className="p-3 border-t border-surface-600 space-y-2">
-          {/* Subscription tier + trial countdown */}
+          {/* Subscription tier badge */}
           {(tier === 'pro' || tier === 'plus') ? (
             <div className="px-1">
               <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
@@ -192,10 +191,6 @@ export default function Layout({ children, onSignOut, trialDaysLeft, tier = 'bas
               }`}>
                 {tier === 'pro' ? 'Pro' : 'Plus'}
               </span>
-            </div>
-          ) : subscriptionStatus === 'trial' && trialDaysLeft !== null && trialDaysLeft !== undefined ? (
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-2.5 py-2 text-xs text-yellow-400">
-              <span className="font-medium">Trial</span> · {trialDaysLeft} {trialDaysLeft === 1 ? 'μέρα απομένει' : 'μέρες απομένουν'}
             </div>
           ) : (
             <div className="px-1">

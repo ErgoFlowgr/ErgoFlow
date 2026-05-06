@@ -30,9 +30,7 @@ import { checkLicense } from './lib/license'
 
 interface SubscriptionInfo {
   status: string
-  daysLeft: number
-  trialEnd: string
-  tier: string              // 'free' | 'trial' | 'basic' | 'plus' | 'pro'
+  tier: string              // 'free' | 'basic' | 'plus' | 'pro'
   vapiMinutesUsed: number
   vapiPhoneNumber: string | null
 }
@@ -49,8 +47,8 @@ export interface SubscriptionCtx {
 }
 
 export const SubscriptionContext = createContext<SubscriptionCtx>({
-  tier: 'basic',
-  status: 'trial',
+  tier: 'free',
+  status: 'active',
   vapiMinutesUsed: 0,
   vapiPhoneNumber: null,
   isPlus: false,
@@ -148,12 +146,9 @@ export default function App() {
     return <Paywall onRefresh={async () => { await checkSubscription() }} />
   }
 
-  // Trial banner data — passed to Layout so it can show the warning
-  const trialDaysLeft = subscription?.status === 'trial' ? subscription.daysLeft : null
-
   const subCtx: SubscriptionCtx = {
-    tier:            subscription?.tier ?? 'basic',
-    status:          subscription?.status ?? 'trial',
+    tier:            subscription?.tier ?? 'free',
+    status:          subscription?.status ?? 'active',
     vapiMinutesUsed: subscription?.vapiMinutesUsed ?? 0,
     vapiPhoneNumber: subscription?.vapiPhoneNumber ?? null,
     isPlus:          ['plus', 'pro'].includes(subscription?.tier ?? ''),
@@ -180,7 +175,7 @@ export default function App() {
           <button onClick={() => setUpdateError(null)} className="shrink-0 opacity-70 hover:opacity-100">✕</button>
         </div>
       )}
-      <Layout onSignOut={handleSignOut} trialDaysLeft={trialDaysLeft} tier={subCtx.tier} subscriptionStatus={subCtx.status}>
+      <Layout onSignOut={handleSignOut} tier={subCtx.tier} subscriptionStatus={subCtx.status}>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />

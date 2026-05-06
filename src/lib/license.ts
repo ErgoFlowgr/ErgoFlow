@@ -14,9 +14,7 @@ import { isElectron, ipc, getSupabaseConfig } from './electron'
 import { platform } from './platform'
 
 export interface LicenseStatus {
-  status: 'trial' | 'active' | 'expired' | 'cancelled' | 'verification_required'
-  daysLeft: number
-  trialEnd: string
+  status: 'active' | 'expired' | 'cancelled' | 'verification_required'
   tier: string
   vapiMinutesUsed: number
   vapiPhoneNumber: string | null
@@ -26,8 +24,6 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
 
 interface RawSubData {
   status: string
-  daysLeft: number
-  trialEnd: string
   tier: string
   vapiMinutesUsed: number
   vapiPhoneNumber: string | null
@@ -102,15 +98,8 @@ async function verifyOnline(): Promise<RawSubData | null> {
       if (!sub) return null
     }
 
-    const trialEndDate = sub.trial_end ? new Date(sub.trial_end) : null
-    const now          = Date.now()
-    const daysLeft     = trialEndDate ? Math.max(0, Math.ceil((trialEndDate.getTime() - now) / 86400_000)) : 0
-    const effectiveStatus = sub.status === 'trial' && trialEndDate !== null && trialEndDate.getTime() < now ? 'expired' : sub.status
-
     return {
-      status:          effectiveStatus,
-      daysLeft,
-      trialEnd:        sub.trial_end ?? '',
+      status:          sub.status,
       tier:            sub.tier ?? 'free',
       vapiMinutesUsed: sub.vapi_minutes_used ?? 0,
       vapiPhoneNumber: sub.vapi_phone_number ?? null,
@@ -132,7 +121,6 @@ export async function checkLicense(): Promise<LicenseStatus> {
       license_verified_at: new Date().toISOString(),
       license_tier:        fresh.tier,
       license_status:      fresh.status,
-      license_trial_end:   fresh.trialEnd,
     } as Parameters<typeof saveSettings>[0])
     return { ...fresh, status: fresh.status as LicenseStatus['status'] }
   }
@@ -142,12 +130,8 @@ export async function checkLicense(): Promise<LicenseStatus> {
     const cacheAge = Date.now() - verifiedAt
     if (cacheAge < THIRTY_DAYS_MS) {
       // Within grace period — allow access with cached data
-      const trialEnd = s.license_trial_end ? new Date(s.license_trial_end) : null
-      const daysLeft = trialEnd ? Math.max(0, Math.ceil((trialEnd.getTime() - Date.now()) / 86400_000)) : 0
       return {
         status:          s.license_status as LicenseStatus['status'],
-        daysLeft,
-        trialEnd:        s.license_trial_end ?? '',
         tier:            s.license_tier ?? 'free',
         vapiMinutesUsed: 0,
         vapiPhoneNumber: null,
@@ -156,8 +140,6 @@ export async function checkLicense(): Promise<LicenseStatus> {
     // Grace period expired — require reconnection
     return {
       status:          'verification_required',
-      daysLeft:        0,
-      trialEnd:        s.license_trial_end ?? '',
       tier:            s.license_tier ?? 'free',
       vapiMinutesUsed: 0,
       vapiPhoneNumber: null,
@@ -167,8 +149,6 @@ export async function checkLicense(): Promise<LicenseStatus> {
   // First install — never verified, online failed — give free access
   return {
     status:          'active',
-    daysLeft:        0,
-    trialEnd:        '',
     tier:            'free',
     vapiMinutesUsed: 0,
     vapiPhoneNumber: null,

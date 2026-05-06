@@ -316,8 +316,8 @@ async function runMigrations(conn: any): Promise<void> {
   await tryAlter(`ALTER TABLE settings ADD COLUMN mydata_user_id TEXT`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN mydata_api_key TEXT`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN license_verified_at TEXT`)
-  await tryAlter(`ALTER TABLE settings ADD COLUMN license_tier TEXT DEFAULT 'basic'`)
-  await tryAlter(`ALTER TABLE settings ADD COLUMN license_status TEXT DEFAULT 'trial'`)
+  await tryAlter(`ALTER TABLE settings ADD COLUMN license_tier TEXT DEFAULT 'free'`)
+  await tryAlter(`ALTER TABLE settings ADD COLUMN license_status TEXT DEFAULT 'active'`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN license_trial_end TEXT`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN sync_enabled INTEGER DEFAULT 0`)
 

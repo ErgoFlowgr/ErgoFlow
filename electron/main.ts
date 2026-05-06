@@ -557,7 +557,7 @@ ipcMain.handle('mydata:submit', async (_e, params: {
 
 // ── IPC: Subscription check ───────────────────────────────────────────────
 // Checks/creates the user's subscription row in Supabase.
-// Returns { status, daysLeft, trialEnd }.
+// Returns { status, tier, vapiMinutesUsed, vapiPhoneNumber }.
 //
 // TODO (Stripe webhook Edge Function):
 //   1. Create a Supabase Edge Function at supabase/functions/stripe-webhook/index.ts
@@ -649,18 +649,8 @@ ipcMain.handle('subscription:check', async () => {
       }
     }
 
-    const trialEndDate = sub.trial_end ? new Date(sub.trial_end) : null
-    const now = Date.now()
-    const daysLeft = trialEndDate ? Math.max(0, Math.ceil((trialEndDate.getTime() - now) / 86400_000)) : 0
-
-    // If still marked as trial but trial has expired, treat as expired
-    const effectiveStatus =
-      sub.status === 'trial' && trialEndDate !== null && trialEndDate.getTime() < now ? 'expired' : sub.status
-
     return {
-      status: effectiveStatus,
-      daysLeft,
-      trialEnd: sub.trial_end ?? '',
+      status: sub.status,
       tier: sub.tier ?? 'free',
       vapiMinutesUsed: sub.vapi_minutes_used ?? 0,
       vapiPhoneNumber: sub.vapi_phone_number ?? null,

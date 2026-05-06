@@ -14,9 +14,6 @@ const TIER_LABELS: Record<string, string> = {
 export default function LockedFeature({ requiredTier, children }: Props) {
   const { tier, status } = useSubscription()
 
-  // Trial and trial-tier users get full access
-  if (status === 'trial' || tier === 'trial') return <>{children}</>
-
   const tiers = ['free', 'basic', 'plus', 'pro']
   const userLevel     = tiers.indexOf(tier)
   const requiredLevel = tiers.indexOf(requiredTier)
