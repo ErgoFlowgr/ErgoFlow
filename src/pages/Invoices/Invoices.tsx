@@ -485,7 +485,7 @@ export default function Invoices() {
   const filters: FilterType[] = ['all', 'draft', 'pending', 'paid']
 
   return (
-    <div className="p-6 h-full overflow-y-auto overflow-x-hidden">
+    <div className="px-3 py-4 sm:p-6 h-full overflow-y-auto">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -695,7 +695,7 @@ export default function Invoices() {
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
           <div className="bg-surface-800 border border-surface-600 rounded-2xl w-full max-w-3xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-surface-600">
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-surface-600">
               <div className="flex items-center gap-4">
                 <h2 className="text-lg font-bold">{editing ? `${editing.number}` : t('invoices.newDocument')}</h2>
                 <div className="flex rounded-lg overflow-hidden border border-surface-500 text-sm">
@@ -716,7 +716,7 @@ export default function Invoices() {
               </button>
             </div>
 
-            <div className="p-5 space-y-4">
+            <div className="p-4 sm:p-5 space-y-4">
               {/* myDATA status banner */}
               {editing && editing.mydata_mark && (
                 <div className="flex items-center gap-3 bg-emerald-500/10 border border-emerald-500/30 rounded-lg px-4 py-2.5">
@@ -968,9 +968,9 @@ export default function Invoices() {
             </div>
 
             {/* Footer */}
-            <div className="flex justify-between items-center p-5 border-t border-surface-600">
+            <div className="flex justify-between items-center flex-wrap gap-3 p-4 sm:p-5 border-t border-surface-600">
               <button className="text-gray-400 hover:text-white text-sm" onClick={closeModal}>{t('invoices.cancel')}</button>
-              <div className="flex gap-3">
+              <div className="flex flex-wrap gap-2 sm:gap-3">
                 {editing && (
                   <button
                     className="btn-secondary flex items-center gap-2 text-sm"

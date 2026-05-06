@@ -1,6 +1,6 @@
-import { NavLink } from 'react-router-dom'
+import { NavLink, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ipc, isElectron } from '../lib/electron'
 import { getSettings } from '../lib/db'
 
@@ -29,6 +29,118 @@ function AppVersion() {
   }, [])
   if (!version) return null
   return <p className="text-xs text-gray-600 px-2">v{version}</p>
+}
+
+// ── More menu icon ────────────────────────────────────────────────────────
+const MoreIcon = () => (
+  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+    <circle cx="5"  cy="12" r="2" />
+    <circle cx="12" cy="12" r="2" />
+    <circle cx="19" cy="12" r="2" />
+  </svg>
+)
+
+// ── Mobile bottom nav with "More" overflow popup ──────────────────────────
+const MAX_VISIBLE = 4  // slots before the "More" button
+
+interface MobileNavItem { to: string; icon: React.ReactNode; label: string; key: string }
+
+function MobileLayout({ children, allMobileItems }: { children: React.ReactNode; allMobileItems: MobileNavItem[] }) {
+  const location = useLocation()
+  const [moreOpen, setMoreOpen] = useState(false)
+  const moreRef = useRef<HTMLDivElement>(null)
+
+  // Close the popup when navigating or tapping outside
+  useEffect(() => { setMoreOpen(false) }, [location.pathname])
+  useEffect(() => {
+    if (!moreOpen) return
+    const handler = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setMoreOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [moreOpen])
+
+  const visibleItems = allMobileItems.slice(0, MAX_VISIBLE)
+  const overflowItems = allMobileItems.slice(MAX_VISIBLE)
+  const hasOverflow = overflowItems.length > 0
+
+  // Is any overflow route currently active?
+  const overflowActive = overflowItems.some(item => location.pathname.startsWith(item.to))
+
+  return (
+    <div className="flex flex-col h-screen w-screen bg-surface-900">
+      {/* Content area */}
+      <main className="flex-1 overflow-auto" style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom))' }}>
+        {children}
+      </main>
+
+      {/* Bottom navigation bar */}
+      <nav className="shrink-0 bg-surface-800 border-t border-surface-600"
+           style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
+        <div className="flex h-16">
+          {/* Visible tabs */}
+          {visibleItems.map(item => (
+            <NavLink
+              key={item.key}
+              to={item.to}
+              className={({ isActive }) =>
+                `flex flex-col items-center justify-center gap-1 flex-1 px-1 transition-colors duration-150 ${
+                  isActive ? 'text-brand-500' : 'text-gray-500'
+                }`
+              }
+            >
+              {item.icon}
+              <span className="text-[10px] font-medium leading-none">{item.label}</span>
+            </NavLink>
+          ))}
+
+          {/* More button — only when there are overflow items */}
+          {hasOverflow && (
+            <div ref={moreRef} className="relative flex-1">
+              <button
+                onClick={() => setMoreOpen(v => !v)}
+                className={`flex flex-col items-center justify-center gap-1 w-full h-full px-1 transition-colors duration-150 ${
+                  moreOpen || overflowActive ? 'text-brand-500' : 'text-gray-500'
+                }`}
+              >
+                <MoreIcon />
+                <span className="text-[10px] font-medium leading-none">Περισσότερα</span>
+              </button>
+
+              {/* Popup menu — opens upward */}
+              {moreOpen && (
+                <div className="absolute bottom-full right-0 mb-1 bg-surface-700 border border-surface-600 rounded-xl shadow-xl overflow-hidden min-w-[160px]">
+                  {overflowItems.map(item => {
+                    const isActive = location.pathname.startsWith(item.to)
+                    return (
+                      <NavLink
+                        key={item.key}
+                        to={item.to}
+                        className={`flex items-center gap-3 px-4 py-3 text-sm font-medium transition-colors duration-150 ${
+                          isActive
+                            ? 'text-brand-500 bg-brand-500/10'
+                            : 'text-gray-300 hover:bg-surface-600 active:bg-surface-600'
+                        }`}
+                      >
+                        {item.icon}
+                        {item.label}
+                      </NavLink>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* When no overflow — render remaining items normally (5 or fewer total) */}
+          {!hasOverflow && null}
+        </div>
+      </nav>
+    </div>
+  )
 }
 
 interface LayoutProps {
@@ -100,21 +212,6 @@ export default function Layout({ children, onSignOut, tier = 'free', subscriptio
     </NavLink>
   )
 
-  // ── Mobile bottom-bar nav item ────────────────────────────────────────────
-  const mobileNavItem = (to: string, icon: React.ReactNode, label: string) => (
-    <NavLink
-      to={to}
-      className={({ isActive }) =>
-        `flex flex-col items-center gap-1 px-3 py-2 flex-1 transition-colors duration-150 ${
-          isActive ? 'text-brand-500' : 'text-gray-500'
-        }`
-      }
-    >
-      {icon}
-      <span className="text-[10px] font-medium leading-none">{label}</span>
-    </NavLink>
-  )
-
   // ── Mobile layout ─────────────────────────────────────────────────────────
   if (!isElectron) {
     const allMobileItems = [
@@ -128,37 +225,8 @@ export default function Layout({ children, onSignOut, tier = 'free', subscriptio
       ...(!hiddenTabs.includes('chat')      ? [{ to: '/chat',      icon: <ChatIcon />,      label: t('nav.chat'),      key: 'chat' }]      : []),
       { to: '/settings', icon: <SettingsIcon />, label: t('nav.settings'), key: 'settings' },
     ]
-    const showLabels = allMobileItems.length <= 5
 
-    return (
-      <div className="flex flex-col h-screen w-screen bg-surface-900">
-        {/* Content area — padded so content doesn't hide under bottom bar */}
-        <main className="flex-1 overflow-auto" style={{ paddingBottom: 'calc(64px + env(safe-area-inset-bottom))' }}>
-          {children}
-        </main>
-
-        {/* Bottom navigation bar — scrolls horizontally when many tabs are enabled */}
-        <nav className="shrink-0 bg-surface-800 border-t border-surface-600 overflow-x-auto"
-             style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}>
-          <div className="flex">
-            {allMobileItems.map(item => (
-              <NavLink
-                key={item.key}
-                to={item.to}
-                className={({ isActive }) =>
-                  `flex flex-col items-center justify-center gap-0.5 py-2 transition-colors duration-150 ${
-                    showLabels ? 'flex-1 px-1' : 'px-4'
-                  } ${isActive ? 'text-brand-500' : 'text-gray-500'}`
-                }
-              >
-                {item.icon}
-                {showLabels && <span className="text-[10px] font-medium leading-none">{item.label}</span>}
-              </NavLink>
-            ))}
-          </div>
-        </nav>
-      </div>
-    )
+    return <MobileLayout allMobileItems={allMobileItems}>{children}</MobileLayout>
   }
 
   // ── Desktop layout ────────────────────────────────────────────────────────
