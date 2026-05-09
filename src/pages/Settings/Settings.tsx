@@ -31,7 +31,7 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState(false)
   const [claudeKey, setClaudeKey] = useState('')
-  const { tier, status, isPro, isFree, isPlus, aiTrialActive, aiTrialUsed, refreshSubscription, vapiPhoneNumber, vapiMinutesUsed } = useSubscription()
+  const { tier, status, isPro, isFree, isPlus, aiTrialActive, aiTrialUsed, refreshSubscription, vapiPhoneNumber, vapiMinutesUsed, requestUpgrade } = useSubscription()
   const [licenseChecking, setLicenseChecking] = useState(false)
   const [licenseChecked, setLicenseChecked] = useState(false)
   const [newCat, setNewCat] = useState('')
@@ -403,7 +403,7 @@ export default function SettingsPage() {
             {(isFree || (!isPlus && !isPro)) ? (
               <button
                 className="btn-primary text-sm px-4 py-2"
-                onClick={() => openExternal('https://ergoflow.gr/pricing')}
+                onClick={() => requestUpgrade()}
               >
                 Αναβάθμιση πλάνου
               </button>

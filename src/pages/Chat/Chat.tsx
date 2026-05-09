@@ -40,7 +40,7 @@ interface ActionCard {
 
 export default function Chat() {
   const { t, i18n } = useTranslation()
-  const { canUseAI, aiTrialUsed, refreshSubscription } = useSubscription()
+  const { canUseAI, aiTrialUsed, refreshSubscription, requestUpgrade } = useSubscription()
   const [trialActivating, setTrialActivating] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [documents, setDocuments] = useState<Document[]>([])
@@ -491,13 +491,7 @@ export default function Chat() {
     }
   }
 
-  const openPricing = () => {
-    if (isElectron) {
-      ipc.openExternal('https://ergoflow.gr/pricing')
-    } else {
-      window.open('https://ergoflow.gr/pricing', '_blank')
-    }
-  }
+  const openPricing = () => { requestUpgrade() }
 
   // AI access gating
   if (!canUseAI) {

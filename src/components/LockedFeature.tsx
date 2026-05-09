@@ -1,5 +1,4 @@
 import { useSubscription } from '../App'
-import { isElectron } from '../lib/electron'
 
 interface Props {
   requiredTier: 'plus' | 'pro'
@@ -12,7 +11,7 @@ const TIER_LABELS: Record<string, string> = {
 }
 
 export default function LockedFeature({ requiredTier, children }: Props) {
-  const { tier, status } = useSubscription()
+  const { tier, status, requestUpgrade } = useSubscription()
 
   const tiers = ['free', 'basic', 'plus', 'pro']
   const userLevel     = tiers.indexOf(tier)
@@ -34,13 +33,9 @@ export default function LockedFeature({ requiredTier, children }: Props) {
           : <>Αυτή η λειτουργία είναι διαθέσιμη στο πλάνο <span className="text-white font-medium">{TIER_LABELS[requiredTier]}</span>.</>
         }
       </p>
-      <a
-        href="https://ergoflow.gr/pricing"
-        className="btn-primary px-6"
-        onClick={e => { e.preventDefault(); isElectron ? window.electron?.openExternal('https://ergoflow.gr/pricing') : window.open('https://ergoflow.gr/pricing', '_blank') }}
-      >
+      <button className="btn-primary px-6" onClick={() => requestUpgrade()}>
         Αναβάθμιση τώρα
-      </a>
+      </button>
     </div>
   )
 }

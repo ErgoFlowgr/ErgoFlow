@@ -50,6 +50,7 @@ export interface SubscriptionCtx {
   aiTrialUsed: boolean
   canUseAI: boolean
   refreshSubscription: () => Promise<void>
+  requestUpgrade: () => void
 }
 
 export const SubscriptionContext = createContext<SubscriptionCtx>({
@@ -64,6 +65,7 @@ export const SubscriptionContext = createContext<SubscriptionCtx>({
   aiTrialUsed: false,
   canUseAI: false,
   refreshSubscription: async () => {},
+  requestUpgrade: () => {},
 })
 
 export default function App() {
@@ -75,6 +77,7 @@ export default function App() {
   const [updateReady, setUpdateReady] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
   const [userId, setUserId] = useState<string>('')
+  const [showUpgrade, setShowUpgrade] = useState(false)
 
   const checkSubscription = async () => {
     const sub = await checkLicense()
@@ -171,6 +174,7 @@ export default function App() {
     aiTrialUsed:     subscription?.aiTrialUsed ?? false,
     canUseAI:        ['plus', 'pro'].includes(tier) || aiTrialActive,
     refreshSubscription: checkSubscription,
+    requestUpgrade: () => setShowUpgrade(true),
   }
 
   return (
@@ -190,6 +194,14 @@ export default function App() {
         <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 bg-red-600 text-white text-sm px-4 py-3 rounded-xl shadow-lg max-w-sm">
           <span className="truncate">Σφάλμα ενημέρωσης: {updateError}</span>
           <button onClick={() => setUpdateError(null)} className="shrink-0 opacity-70 hover:opacity-100">✕</button>
+        </div>
+      )}
+      {showUpgrade && (
+        <div className="fixed inset-0 z-50">
+          <Paywall
+            onRefresh={async () => { setShowUpgrade(false); await checkSubscription() }}
+            userId={userId}
+          />
         </div>
       )}
       <Layout onSignOut={handleSignOut} tier={subCtx.tier} subscriptionStatus={subCtx.status}>
