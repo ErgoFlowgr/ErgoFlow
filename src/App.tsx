@@ -140,6 +140,11 @@ export default function App() {
   if (!authenticated) {
     // isNewAccount=true → show onboarding, false → skip straight to app
     return <Auth onAuth={async (isNewAccount: boolean) => {
+      const token = await platform.getToken()
+      if (token) {
+        const uid = token.includes('.') ? extractUserIdFromJwt(token) : token
+        if (uid) { await db.switch(uid); setUserId(uid) }
+      }
       setAuthenticated(true)
       if (!isNewAccount) setOnboarded(true)
       await checkSubscription()
