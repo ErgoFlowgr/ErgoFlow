@@ -68,6 +68,21 @@ Deno.serve(async (req: Request) => {
   // ── Handle events ──────────────────────────────────────────────────────
   switch (eventType) {
 
+    // Payment Link checkout completed — links Stripe customer to our user
+    case 'checkout.session.completed': {
+      const userId           = String(obj.client_reference_id ?? '')
+      const stripeCustomerId = String(obj.customer ?? '')
+      if (!userId || !stripeCustomerId) {
+        console.warn('checkout.session.completed missing client_reference_id or customer')
+        break
+      }
+      await supabase.from('subscriptions').update({
+        stripe_customer_id: stripeCustomerId,
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', userId)
+      break
+    }
+
     // New subscription created (includes trial start)
     case 'customer.subscription.created': {
       const stripeCustomerId = String(obj.customer ?? '')
