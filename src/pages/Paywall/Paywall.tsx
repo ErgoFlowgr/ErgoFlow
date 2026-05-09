@@ -1,7 +1,7 @@
 import { ipc, isElectron } from '../../lib/electron'
 
-const STRIPE_BASIC_URL = 'https://buy.stripe.com/PLACEHOLDER_BASIC'
-const STRIPE_PLUS_URL  = 'https://buy.stripe.com/PLACEHOLDER_PLUS'
+const STRIPE_BASIC_URL = 'https://buy.stripe.com/test_fZubJ1cYYbA3asZ5MH4Rq00'
+const STRIPE_PLUS_URL  = 'https://buy.stripe.com/test_28EbJ1aQQ47BcB7ejd4Rq01'
 
 interface PaywallProps {
   onRefresh: () => void
