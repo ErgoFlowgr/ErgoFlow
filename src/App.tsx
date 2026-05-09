@@ -33,6 +33,8 @@ interface SubscriptionInfo {
   tier: string              // 'free' | 'basic' | 'plus' | 'pro'
   vapiMinutesUsed: number
   vapiPhoneNumber: string | null
+  aiTrialActive: boolean
+  aiTrialUsed: boolean
 }
 
 // Subscription context — consumed by pages that need to gate features
@@ -44,6 +46,10 @@ export interface SubscriptionCtx {
   isPlus: boolean
   isPro: boolean
   isFree: boolean
+  aiTrialActive: boolean
+  aiTrialUsed: boolean
+  canUseAI: boolean
+  refreshSubscription: () => Promise<void>
 }
 
 export const SubscriptionContext = createContext<SubscriptionCtx>({
@@ -54,6 +60,10 @@ export const SubscriptionContext = createContext<SubscriptionCtx>({
   isPlus: false,
   isPro: false,
   isFree: false,
+  aiTrialActive: false,
+  aiTrialUsed: false,
+  canUseAI: false,
+  refreshSubscription: async () => {},
 })
 
 export default function App() {
@@ -64,6 +74,7 @@ export default function App() {
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null)
   const [updateReady, setUpdateReady] = useState(false)
   const [updateError, setUpdateError] = useState<string | null>(null)
+  const [userId, setUserId] = useState<string>('')
 
   const checkSubscription = async () => {
     const sub = await checkLicense()
@@ -76,7 +87,7 @@ export default function App() {
         const token = await platform.getToken()
         if (token) {
           const userId = token.includes('.') ? extractUserIdFromJwt(token) : token
-          if (userId) await db.switch(userId)
+          if (userId) { await db.switch(userId); setUserId(userId) }
         }
         const s = await getSettings()
         if (s?.language) { i18n.changeLanguage(s.language); document.documentElement.lang = s.language }
@@ -143,17 +154,23 @@ export default function App() {
   }
 
   if (subscription && (subscription.status === 'expired' || subscription.status === 'cancelled')) {
-    return <Paywall onRefresh={async () => { await checkSubscription() }} />
+    return <Paywall onRefresh={async () => { await checkSubscription() }} userId={userId} />
   }
 
+  const tier           = subscription?.tier ?? 'free'
+  const aiTrialActive  = subscription?.aiTrialActive ?? false
   const subCtx: SubscriptionCtx = {
-    tier:            subscription?.tier ?? 'free',
+    tier,
     status:          subscription?.status ?? 'active',
     vapiMinutesUsed: subscription?.vapiMinutesUsed ?? 0,
     vapiPhoneNumber: subscription?.vapiPhoneNumber ?? null,
-    isPlus:          ['plus', 'pro'].includes(subscription?.tier ?? ''),
-    isPro:           subscription?.tier === 'pro',
-    isFree:          subscription?.tier === 'free',
+    isPlus:          ['plus', 'pro'].includes(tier),
+    isPro:           tier === 'pro',
+    isFree:          tier === 'free',
+    aiTrialActive,
+    aiTrialUsed:     subscription?.aiTrialUsed ?? false,
+    canUseAI:        ['plus', 'pro'].includes(tier) || aiTrialActive,
+    refreshSubscription: checkSubscription,
   }
 
   return (

@@ -38,6 +38,9 @@ export interface Settings {
   license_tier: string | null
   license_status: string | null
   license_trial_end: string | null
+  // AI trial cache
+  ai_trial_start?: string | null
+  ai_trial_used?: boolean
   // Cloud sync opt-in
   sync_enabled: number
   // Minimize to tray instead of closing

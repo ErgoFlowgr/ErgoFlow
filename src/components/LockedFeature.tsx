@@ -7,8 +7,8 @@ interface Props {
 }
 
 const TIER_LABELS: Record<string, string> = {
-  plus: 'Plus (€69/μήνα)',
-  pro:  'Pro (€130/μήνα)',
+  plus: 'Plus (€39/μήνα)',
+  pro:  'Pro',
 }
 
 export default function LockedFeature({ requiredTier, children }: Props) {

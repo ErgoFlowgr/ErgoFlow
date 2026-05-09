@@ -4,6 +4,9 @@ import { getChatHistory, clearChatHistory, getDocuments, getSettings, getCustome
 import { chatWithActions, getAIConfig, type AIAction } from '../../lib/ai'
 import { processPDF } from '../../lib/pdf'
 import { platform } from '../../lib/platform'
+import { activateAITrial } from '../../lib/license'
+import { useSubscription } from '../../App'
+import { isElectron, ipc } from '../../lib/electron'
 
 // Extend Window for SpeechRecognition (Chromium/Electron)
 declare global {
@@ -37,6 +40,8 @@ interface ActionCard {
 
 export default function Chat() {
   const { t, i18n } = useTranslation()
+  const { canUseAI, aiTrialUsed, refreshSubscription } = useSubscription()
+  const [trialActivating, setTrialActivating] = useState(false)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [documents, setDocuments] = useState<Document[]>([])
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -475,6 +480,91 @@ export default function Chat() {
   }
 
   const isMobile = platform.isMobile
+
+  const handleActivateTrial = async () => {
+    setTrialActivating(true)
+    try {
+      await activateAITrial()
+      await refreshSubscription()
+    } finally {
+      setTrialActivating(false)
+    }
+  }
+
+  const openPricing = () => {
+    if (isElectron) {
+      ipc.openExternal('https://ergoflow.gr/pricing')
+    } else {
+      window.open('https://ergoflow.gr/pricing', '_blank')
+    }
+  }
+
+  // AI access gating
+  if (!canUseAI) {
+    if (!aiTrialUsed) {
+      // Trial not yet activated — show activation screen
+      return (
+        <div className="flex h-full items-center justify-center p-6">
+          <div className="bg-surface-800 border border-surface-600 rounded-2xl p-8 max-w-md w-full text-center space-y-5">
+            <div className="flex justify-center">
+              <div className="w-16 h-16 rounded-2xl bg-brand-500/20 flex items-center justify-center">
+                <svg className="w-8 h-8 text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1 .03 2.798-1.442 2.798H4.24c-1.47 0-2.441-1.798-1.442-2.798L4.2 15.3" />
+                </svg>
+              </div>
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-white mb-2">Δοκιμάστε τον AI βοηθό δωρεάν</h2>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                Ο AI βοηθός γνωρίζει την επιχείρησή σας — πελάτες, εργασίες, τιμολόγια. 14 ημέρες δωρεάν, χωρίς δέσμευση.
+              </p>
+            </div>
+            <button
+              className="btn-primary w-full justify-center py-3"
+              onClick={handleActivateTrial}
+              disabled={trialActivating}
+            >
+              {trialActivating ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Ενεργοποίηση...
+                </span>
+              ) : (
+                'Έναρξη δωρεάν δοκιμής 14 ημερών'
+              )}
+            </button>
+          </div>
+        </div>
+      )
+    }
+
+    // Trial used and expired — show upgrade screen
+    return (
+      <div className="flex h-full items-center justify-center p-6">
+        <div className="bg-surface-800 border border-surface-600 rounded-2xl p-8 max-w-md w-full text-center space-y-5">
+          <div className="flex justify-center">
+            <div className="w-16 h-16 rounded-2xl bg-surface-700 flex items-center justify-center">
+              <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1 .03 2.798-1.442 2.798H4.24c-1.47 0-2.441-1.798-1.442-2.798L4.2 15.3" />
+              </svg>
+            </div>
+          </div>
+          <div>
+            <h2 className="text-xl font-bold text-white mb-2">Η δοκιμή σας έληξε</h2>
+            <p className="text-sm text-gray-400 leading-relaxed">
+              Αναβαθμίστε στο Plus για €39/μήνα για μόνιμη πρόσβαση στον AI βοηθό.
+            </p>
+          </div>
+          <button
+            className="btn-primary w-full justify-center py-3"
+            onClick={openPricing}
+          >
+            Αναβάθμιση σε Plus
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`flex h-full ${isMobile ? 'flex-col' : ''}`}>

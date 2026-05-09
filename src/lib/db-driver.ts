@@ -323,6 +323,9 @@ async function runMigrations(conn: any): Promise<void> {
   await tryAlter(`ALTER TABLE settings ADD COLUMN company_logo TEXT`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN bratnet_username TEXT`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN bratnet_api_key TEXT`)
+  // AI trial tracking (cached from Supabase)
+  await tryAlter(`ALTER TABLE settings ADD COLUMN ai_trial_start TEXT`)
+  await tryAlter(`ALTER TABLE settings ADD COLUMN ai_trial_used INTEGER DEFAULT 0`)
 
   // Deduplicate sync_queue and add unique index
   try {

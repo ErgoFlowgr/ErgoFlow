@@ -5,6 +5,7 @@ import { getSettings, saveSettings, getCategories, upsertCategory, deleteCategor
 import { ipc, isElectron } from '../../lib/electron'
 import { platform } from '../../lib/platform'
 import { useSubscription } from '../../App'
+import { checkLicense } from '../../lib/license'
 import { syncNow } from '../../lib/sync-mobile'
 import { db } from '../../lib/db-driver'
 
@@ -30,7 +31,9 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [saveError, setSaveError] = useState(false)
   const [claudeKey, setClaudeKey] = useState('')
-  const { isPro, vapiPhoneNumber, vapiMinutesUsed } = useSubscription()
+  const { tier, status, isPro, isFree, isPlus, aiTrialActive, aiTrialUsed, refreshSubscription, vapiPhoneNumber, vapiMinutesUsed } = useSubscription()
+  const [licenseChecking, setLicenseChecking] = useState(false)
+  const [licenseChecked, setLicenseChecked] = useState(false)
   const [newCat, setNewCat] = useState('')
   const [newCatColor, setNewCatColor] = useState('#4f6ef7')
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
@@ -260,6 +263,27 @@ export default function SettingsPage() {
     }
   }
 
+  const handleCheckLicense = async () => {
+    setLicenseChecking(true)
+    setLicenseChecked(false)
+    try {
+      await checkLicense()
+      await refreshSubscription()
+      setLicenseChecked(true)
+      setTimeout(() => setLicenseChecked(false), 3000)
+    } finally {
+      setLicenseChecking(false)
+    }
+  }
+
+  const openExternal = (url: string) => {
+    if (isElectron) {
+      ipc.openExternal(url)
+    } else {
+      window.open(url, '_blank')
+    }
+  }
+
   if (!settings) return (
     <div className="flex items-center justify-center h-full">
       <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
@@ -342,6 +366,73 @@ export default function SettingsPage() {
             <option value="en">English</option>
           </select>
         </Field>
+      </Section>
+
+      {/* Subscription */}
+      <Section title="Συνδρομή">
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-400">Πλάνο</span>
+          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
+            tier === 'pro'   ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+            tier === 'plus'  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+            tier === 'basic' ? 'bg-brand-500/20 text-brand-300 border border-brand-500/30' :
+                               'bg-surface-600 text-gray-400 border border-surface-500'
+          }`}>
+            {tier === 'pro' ? 'Pro' : tier === 'plus' ? 'Plus' : tier === 'basic' ? 'Basic' : 'Free'}
+          </span>
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-gray-400">Κατάσταση</span>
+          <span className={`text-sm font-medium ${status === 'active' ? 'text-emerald-400' : 'text-yellow-400'}`}>
+            {status === 'active' ? 'Ενεργό' : status === 'expired' ? 'Ληγμένο' : status === 'cancelled' ? 'Ακυρωμένο' : 'Απαιτείται επαλήθευση'}
+          </span>
+        </div>
+        {aiTrialActive && settings?.ai_trial_start && (
+          <div className="flex items-center justify-between">
+            <span className="text-sm text-gray-400">AI δοκιμή</span>
+            <span className="text-sm text-brand-300">
+              {Math.max(0, 14 - Math.floor((Date.now() - new Date(settings.ai_trial_start).getTime()) / 86400000))} ημέρες απομένουν
+            </span>
+          </div>
+        )}
+        {aiTrialUsed && !aiTrialActive && (
+          <p className="text-xs text-gray-500">Η δοκιμή AI έχει λήξει</p>
+        )}
+        <div className="flex items-center justify-between pt-2 border-t border-surface-600 gap-3">
+          <div className="flex gap-2">
+            {(isFree || (!isPlus && !isPro)) ? (
+              <button
+                className="btn-primary text-sm px-4 py-2"
+                onClick={() => openExternal('https://ergoflow.gr/pricing')}
+              >
+                Αναβάθμιση πλάνου
+              </button>
+            ) : (
+              <button
+                className="btn-secondary text-sm px-4 py-2"
+                onClick={() => openExternal('https://billing.stripe.com/PLACEHOLDER')}
+              >
+                Διαχείριση συνδρομής
+              </button>
+            )}
+          </div>
+          <button
+            className="text-xs text-gray-500 hover:text-gray-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-surface-700"
+            onClick={handleCheckLicense}
+            disabled={licenseChecking}
+          >
+            {licenseChecking ? (
+              <span className="flex items-center gap-1.5">
+                <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+                Έλεγχος...
+              </span>
+            ) : licenseChecked ? (
+              <span className="text-emerald-400">✓ Ελέγχθηκε</span>
+            ) : (
+              'Ανανέωση άδειας'
+            )}
+          </button>
+        </div>
       </Section>
 
       {/* AI Phone Assistant (Pro only) */}
