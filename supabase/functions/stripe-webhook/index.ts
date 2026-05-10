@@ -72,14 +72,17 @@ Deno.serve(async (req: Request) => {
     case 'checkout.session.completed': {
       const userId           = String(obj.client_reference_id ?? '')
       const stripeCustomerId = String(obj.customer ?? '')
+      console.log('checkout.session.completed | userId:', userId, '| customerId:', stripeCustomerId)
       if (!userId || !stripeCustomerId) {
         console.warn('checkout.session.completed missing client_reference_id or customer')
         break
       }
-      await supabase.from('subscriptions').update({
+      const { error: updErr } = await supabase.from('subscriptions').update({
         stripe_customer_id: stripeCustomerId,
         updated_at: new Date().toISOString(),
       }).eq('user_id', userId)
+      if (updErr) console.error('checkout update error:', JSON.stringify(updErr))
+      else console.log('checkout update OK | userId:', userId)
       break
     }
 
@@ -101,7 +104,7 @@ Deno.serve(async (req: Request) => {
         .maybeSingle()
 
       if (sub) {
-        await supabase.from('subscriptions').update({
+        const { error: subErr } = await supabase.from('subscriptions').update({
           tier,
           status,
           stripe_subscription_id: stripeSubId,
@@ -109,6 +112,8 @@ Deno.serve(async (req: Request) => {
           period_end:   periodEnd,
           updated_at:   new Date().toISOString(),
         }).eq('id', sub.id)
+        if (subErr) console.error('subscription.created update error:', JSON.stringify(subErr))
+        else console.log('subscription.created update OK | tier:', tier, '| userId:', sub.user_id)
       } else {
         console.warn('No subscription row found for customer:', stripeCustomerId)
       }
