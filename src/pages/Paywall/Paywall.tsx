@@ -75,6 +75,7 @@ function TierCard({ name, price, priceNote, features, buttonLabel, onBuy, highli
 export default function Paywall({ onRefresh, userId }: PaywallProps) {
   const handleBuy = (baseUrl: string) => {
     const url = userId ? `${baseUrl}?client_reference_id=${userId}` : baseUrl
+    console.log('[Paywall] opening URL:', url, '| userId:', userId)
     openUrl(url)
   }
 
