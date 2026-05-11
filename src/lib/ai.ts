@@ -1,10 +1,9 @@
-import { platform } from './platform'
+import { supabaseFetch } from './platform'
 import { searchChunks, type Customer, type InventoryItem } from './db'
 
 type BraveResult = { web?: { results?: Array<{ title: string; description: string; url: string }> } }
 
 interface AIConfig {
-  claudeApiKey: string
   allowWebSearch?: boolean
   braveApiKey?: string
   imageModel?: string
@@ -53,7 +52,6 @@ async function callClaude(
   message: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   system: string,
-  apiKey: string,
   imageBase64?: string,
   imageMimeType?: string,
   imageModel?: string
@@ -67,13 +65,8 @@ async function callClaude(
 
   const model = imageBase64 && imageModel ? imageModel : 'claude-sonnet-4-6'
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
+  const res = await supabaseFetch('/functions/v1/claude-proxy', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
     body: JSON.stringify({
       model,
       max_tokens: 1024,
@@ -108,7 +101,7 @@ If the answer is not in the documentation, say so clearly.`
     : `You are a helpful assistant for a heating/HVAC repair technician.
 No product documents have been uploaded yet. Answer from general knowledge.`
 
-  return callClaude(userMessage, history, systemPrompt, config.claudeApiKey)
+  return callClaude(userMessage, history, systemPrompt)
 }
 
 // ── Chat with Actions (job creation / editing via AI) ──────────────────────
@@ -283,7 +276,7 @@ IMPORTANT — When the user shares an image of a product, label, or box and want
 
 Only include ONE <action> block per response. Never include it for questions or general chat. NEVER say "Here's the action block" or describe the block — just include it.`
 
-  const raw = await callClaude(userMessage, history, systemPrompt, config.claudeApiKey, imageBase64, imageMimeType, config.imageModel)
+  const raw = await callClaude(userMessage, history, systemPrompt, imageBase64, imageMimeType, config.imageModel)
   return parseAction(raw)
 }
 
@@ -301,7 +294,7 @@ title: ${fields.title}
 description: ${fields.description}
 notes: ${fields.notes}`
 
-  const raw = await callClaude(prompt, [], 'You are a translator. Return only valid JSON.', config.claudeApiKey)
+  const raw = await callClaude(prompt, [], 'You are a translator. Return only valid JSON.')
   const jsonMatch = raw.match(/\{[\s\S]*\}/)
   if (!jsonMatch) throw new Error('Invalid translation response')
   return JSON.parse(jsonMatch[0]) as { title: string; description: string; notes: string }
@@ -310,20 +303,13 @@ notes: ${fields.notes}`
 // ── Build config from stored settings ─────────────────────────────────────
 
 export async function getAIConfig(
-  settingsClaudeKey?: string | null,
+  _settingsClaudeKey?: string | null,
   allowWebSearch?: boolean,
   braveApiKey?: string | null,
   imageModel?: string | null,
   language?: string
 ): Promise<AIConfig> {
-  const claudeApiKey =
-    (await platform.getKeychainValue('claude_api_key')) ??
-    settingsClaudeKey ??
-    import.meta.env.VITE_CLAUDE_API_KEY ??
-    ''
-
   return {
-    claudeApiKey,
     allowWebSearch: allowWebSearch ?? false,
     braveApiKey: braveApiKey ?? undefined,
     imageModel: imageModel ?? 'claude-sonnet-4-6',
