@@ -43,11 +43,9 @@ Deno.serve(async (req: Request) => {
   const message     = body.message as Record<string, unknown> | undefined
   const call        = message?.call as Record<string, unknown> | undefined
 
-  // The number that was called (the business's VAPI number, e.g. Clima Energy's)
+  // The VAPI phone number object for the called number (business's number)
   const phoneNumberObj = call?.phoneNumber as Record<string, unknown> | undefined
-  const calledNumber   = normalizePhone(
-    String(phoneNumberObj?.number ?? phoneNumberObj?.phoneNumber ?? '')
-  )
+  const vapiPhoneId    = String(phoneNumberObj?.id ?? '')
 
   // The number that is calling (the customer/caller)
   const customerObj  = call?.customer as Record<string, unknown> | undefined
@@ -55,23 +53,23 @@ Deno.serve(async (req: Request) => {
     String(customerObj?.number ?? customerObj?.phoneNumber ?? '')
   )
 
-  if (!calledNumber) {
-    console.error('No called number in payload')
-    return new Response('Missing phone number in payload', { status: 400 })
+  if (!vapiPhoneId) {
+    console.error('No phone number ID in payload')
+    return new Response('Missing phone number ID in payload', { status: 400 })
   }
 
   const supabase = createClient(SUPABASE_URL, SUPABASE_SRK)
 
-  // ── Resolve owner from the called number ────────────────────────────────
-  // Each Pro customer has a unique phone number stored in subscriptions.
+  // ── Resolve owner from the VAPI phone number ID ──────────────────────────
+  // Each Pro customer's VAPI phone number ID is stored in subscriptions.
   const { data: sub } = await supabase
     .from('subscriptions')
     .select('user_id, vapi_assistant_id')
-    .eq('vapi_phone_number', calledNumber)
+    .eq('vapi_phone_number_id', vapiPhoneId)
     .maybeSingle()
 
   if (!sub?.vapi_assistant_id) {
-    console.error('No subscription found for called number:', calledNumber)
+    console.error('No subscription found for phone ID:', vapiPhoneId)
     return new Response('Unknown phone number', { status: 404 })
   }
 

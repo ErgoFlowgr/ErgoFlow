@@ -132,11 +132,13 @@ Deno.serve(async (req: Request) => {
     }),
   })
 
-  let phoneNumber: string | null = null
+  let phoneNumber:   string | null = null
+  let phoneNumberId: string | null = null
 
   if (phoneRes.ok) {
     const phoneData = await phoneRes.json() as Record<string, unknown>
-    phoneNumber = String(phoneData.number ?? phoneData.phoneNumber ?? '') || null
+    phoneNumber   = String(phoneData.number ?? phoneData.phoneNumber ?? '') || null
+    phoneNumberId = String(phoneData.id ?? '') || null
   } else {
     // Phone provisioning failed — log but don't fail the whole operation
     // Support can manually assign a number later
@@ -147,9 +149,10 @@ Deno.serve(async (req: Request) => {
   const { error } = await supabase
     .from('subscriptions')
     .update({
-      vapi_assistant_id:  assistantId,
-      vapi_phone_number:  phoneNumber,
-      updated_at:         new Date().toISOString(),
+      vapi_assistant_id:    assistantId,
+      vapi_phone_number:    phoneNumber,
+      vapi_phone_number_id: phoneNumberId,
+      updated_at:           new Date().toISOString(),
     })
     .eq('user_id', user_id)
 
