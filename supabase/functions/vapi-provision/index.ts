@@ -116,6 +116,9 @@ Deno.serve(async (req: Request) => {
   const assistantId = String(cloned.id ?? '')
 
   // ── 3. Buy a phone number and assign it to the new assistant ──────────
+  const inboundSecret  = Deno.env.get('VAPI_WEBHOOK_SECRET') ?? ''
+  const inboundUrl     = `${SUPABASE_URL}/functions/v1/vapi-inbound?secret=${inboundSecret}`
+
   const phoneRes = await fetch(`${VAPI_BASE}/phone-number`, {
     method:  'POST',
     headers: {
@@ -123,9 +126,9 @@ Deno.serve(async (req: Request) => {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      provider:    'twilio',  // VAPI uses Twilio for numbers
-      areaCode:    '30',      // Greece country code prefix
-      assistantId,
+      provider:  'twilio',
+      areaCode:  '30',
+      serverUrl: inboundUrl,  // routes to vapi-inbound for pre-call caller lookup
     }),
   })
 
