@@ -43,9 +43,11 @@ Deno.serve(async (req: Request) => {
   const message     = body.message as Record<string, unknown> | undefined
   const call        = message?.call as Record<string, unknown> | undefined
 
-  // The VAPI phone number object for the called number (business's number)
-  const phoneNumberObj = call?.phoneNumber as Record<string, unknown> | undefined
-  const vapiPhoneId    = String(phoneNumberObj?.id ?? '')
+  // Try both locations — VAPI places phoneNumber at call.phoneNumber or message.phoneNumber
+  const phoneNumberObj = (
+    call?.phoneNumber ?? message?.phoneNumber
+  ) as Record<string, unknown> | undefined
+  const vapiPhoneId = String(phoneNumberObj?.id ?? '')
 
   // The number that is calling (the customer/caller)
   const customerObj  = call?.customer as Record<string, unknown> | undefined
@@ -168,9 +170,7 @@ Deno.serve(async (req: Request) => {
       assistantId,
       assistantOverrides: {
         model: {
-          messages: [
-            { role: 'system', content: fullSystemPrompt },
-          ],
+          systemPrompt: fullSystemPrompt,
         },
       },
     }),
