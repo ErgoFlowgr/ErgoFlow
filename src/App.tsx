@@ -78,6 +78,7 @@ export default function App() {
   const [updateError, setUpdateError] = useState<string | null>(null)
   const [userId, setUserId] = useState<string>('')
   const [showUpgrade, setShowUpgrade] = useState(false)
+  const [initError, setInitError] = useState<string | null>(null)
 
   const checkSubscription = async () => {
     const sub = await checkLicense()
@@ -107,6 +108,7 @@ export default function App() {
         }
       } catch (e) {
         console.error('[App] init failed:', e)
+        setInitError(e instanceof Error ? e.message : String(e))
       } finally {
         setReady(true)
       }
@@ -122,8 +124,28 @@ export default function App() {
 
   if (!ready) {
     return (
-      <div className="flex items-center justify-center h-screen bg-surface-900">
-        <div className="w-8 h-8 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
+      <div className="flex items-center justify-center h-screen bg-gray-900">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-gray-400 text-sm">Φόρτωση...</span>
+        </div>
+      </div>
+    )
+  }
+
+  if (initError) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-gray-900 p-6">
+        <div className="bg-red-900/40 border border-red-500 rounded-xl p-6 max-w-sm w-full">
+          <p className="text-red-300 font-semibold mb-2">Σφάλμα εκκίνησης</p>
+          <p className="text-red-200 text-sm break-all">{initError}</p>
+          <button
+            className="mt-4 w-full bg-indigo-600 text-white rounded-lg py-2 text-sm font-medium"
+            onClick={() => { setInitError(null); window.location.reload() }}
+          >
+            Επανεκκίνηση
+          </button>
+        </div>
       </div>
     )
   }
