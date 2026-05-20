@@ -210,6 +210,7 @@ export default function Invoices() {
   const [items, setItems] = useState<LineItem[]>([emptyLine()])
   const [saving, setSaving] = useState(false)
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
+  const [printPreviewHtml, setPrintPreviewHtml] = useState<string | null>(null)
   const [catalog, setCatalog] = useState<InventoryItem[]>([])
   const [showCatalog, setShowCatalog] = useState(false)
   const [catalogSearch, setCatalogSearch] = useState('')
@@ -421,7 +422,12 @@ export default function Invoices() {
 
   const handlePrint = async (inv: Invoice) => {
     const invItems = await getInvoiceItems(inv.id)
-    await printInvoice(inv, invItems, settings, getCustomerVat(inv))
+    if (isElectron) {
+      await printInvoice(inv, invItems, settings, getCustomerVat(inv))
+    } else {
+      const html = buildInvoiceHtml(inv, invItems, settings, getCustomerVat(inv))
+      setPrintPreviewHtml(html)
+    }
   }
 
   const handleSavePdf = async (inv: Invoice) => {
@@ -1040,6 +1046,38 @@ export default function Invoices() {
                 ))}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Print preview overlay (mobile only) */}
+      {printPreviewHtml && (
+        <div className="fixed inset-0 z-[70] flex flex-col bg-white">
+          <div className="flex items-center gap-3 px-4 py-3 bg-gray-100 border-b border-gray-200 shrink-0">
+            <button
+              className="flex items-center gap-1.5 text-sm font-medium text-gray-700 hover:text-gray-900 bg-white border border-gray-300 rounded-lg px-3 py-1.5 shadow-sm"
+              onClick={() => setPrintPreviewHtml(null)}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+              Πίσω
+            </button>
+            <span className="text-sm font-semibold text-gray-700 flex-1 truncate">Προεπισκόπηση τιμολογίου</span>
+            <button
+              className="flex items-center gap-1.5 text-sm font-medium text-white bg-indigo-600 rounded-lg px-3 py-1.5 shadow-sm"
+              onClick={() => window.print()}
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              Εκτύπωση
+            </button>
+          </div>
+          <iframe
+            className="flex-1 w-full border-none"
+            srcDoc={printPreviewHtml}
+            title="Προεπισκόπηση τιμολογίου"
+          />
         </div>
       )}
 

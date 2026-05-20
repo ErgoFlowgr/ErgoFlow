@@ -93,26 +93,26 @@ export default function Inventory() {
       ) : (
         <div className="bg-surface-800 border border-surface-600 rounded-xl overflow-hidden">
           <div className="overflow-x-auto">
-          <table className="w-full min-w-[480px] text-sm">
+          <table className="w-full min-w-[320px] text-sm">
             <thead className="bg-surface-700 border-b border-surface-600">
               <tr>
-                <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">{t('inventory.code')}</th>
+                <th className="hidden sm:table-cell text-left px-4 py-3 text-xs text-gray-400 font-medium">{t('inventory.code')}</th>
                 <th className="text-left px-4 py-3 text-xs text-gray-400 font-medium">{t('inventory.description')}</th>
-                <th className="text-right px-4 py-3 text-xs text-gray-400 font-medium">{t('inventory.unit')}</th>
+                <th className="hidden sm:table-cell text-right px-4 py-3 text-xs text-gray-400 font-medium">{t('inventory.unit')}</th>
                 <th className="text-right px-4 py-3 text-xs text-gray-400 font-medium">{t('inventory.price')}</th>
-                <th className="w-20" />
+                <th className="w-12" />
               </tr>
             </thead>
             <tbody>
               {items.map((item, i) => (
                 <tr key={item.id} className={`border-t border-surface-600 hover:bg-surface-700 cursor-pointer transition-colors ${i % 2 === 0 ? '' : 'bg-surface-800/50'}`} onClick={() => openEdit(item)}>
-                  <td className="px-4 py-3 font-mono text-xs text-gray-400">{item.code || '—'}</td>
-                  <td className="px-4 py-3 font-medium">
-                    {item.name}
-                    {item.notes && <span className="ml-2 text-xs text-gray-500">{item.notes}</span>}
+                  <td className="hidden sm:table-cell px-4 py-3 font-mono text-xs text-gray-400">{item.code || '—'}</td>
+                  <td className="px-4 py-3 font-medium min-w-0">
+                    <span className="block truncate">{item.name}</span>
+                    {item.notes && <span className="block text-xs text-gray-500 truncate">{item.notes}</span>}
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-400">{item.unit}</td>
-                  <td className="px-4 py-3 text-right font-semibold">{formatPrice(item.price)}</td>
+                  <td className="hidden sm:table-cell px-4 py-3 text-right text-gray-400">{item.unit}</td>
+                  <td className="px-4 py-3 text-right font-semibold whitespace-nowrap">{formatPrice(item.price)}</td>
                   <td className="px-3 py-3 text-right" onClick={e => e.stopPropagation()}>
                     <button className="text-gray-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-surface-600 transition-colors" onClick={() => setDeleteConfirm(item.id)}>
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
