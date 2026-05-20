@@ -13,6 +13,9 @@ const config: CapacitorConfig = {
     CapacitorHttp: {
       enabled: true,
     },
+    CapacitorSQLite: {
+      androidIsEncryption: false,
+    },
     // Push notifications (future phase)
     // PushNotifications: { presentationOptions: ['badge', 'sound', 'alert'] },
   },
