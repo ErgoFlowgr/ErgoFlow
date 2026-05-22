@@ -20,6 +20,15 @@ const ALLOWED_SYNC_TABLES = new Set(SYNC_TABLES)
 
 let syncInProgress = false
 
+const SETTINGS_PUSH_EXCLUDE_COLUMNS = new Set([
+  'sync_enabled',
+  'minimize_to_tray',
+  'company_logo',
+  'bratnet_api_key',
+  'ai_trial_start',
+  'ai_trial_used',
+])
+
 async function ensureFreshToken(): Promise<string | null> {
   const token = await platform.getToken()
   if (!token) return null
@@ -286,10 +295,13 @@ async function push(token: string): Promise<void> {
 
         let bodyObj: Record<string, unknown>
         if (item.table_name === 'settings') {
-          // sync_enabled is device-local — never push it.
+          // sync_enabled and other runtime/secret fields are device-local — never push them.
           // Exclude null fields so this device can't overwrite another device's data with nulls.
-          const { sync_enabled: _se, ...rest } = clean as Record<string, unknown>
-          bodyObj = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null && v !== undefined))
+          bodyObj = Object.fromEntries(
+            Object.entries(clean as Record<string, unknown>).filter(([k, v]) =>
+              !SETTINGS_PUSH_EXCLUDE_COLUMNS.has(k) && v !== null && v !== undefined
+            )
+          )
           bodyObj['owner_id'] = ownerId
         } else {
           bodyObj = { ...clean, owner_id: ownerId }

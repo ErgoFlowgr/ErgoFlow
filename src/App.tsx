@@ -1,7 +1,7 @@
 import { useEffect, useState, createContext, useContext } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { getSettings } from './lib/db'
+import { getSettings, type Settings } from './lib/db'
 import { ipc, isElectron } from './lib/electron'
 import { platform } from './lib/platform'
 import { db } from './lib/db-driver'
@@ -25,6 +25,35 @@ async function withStartupTimeout<T>(stage: string, task: () => Promise<T>, time
     ])
   } finally {
     if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
+function hasLocalProfileSettings(settings: Settings | null | undefined): boolean {
+  return !!(
+    settings?.company_name ||
+    settings?.owner_name ||
+    settings?.owner_last_name ||
+    settings?.phone ||
+    settings?.phone2 ||
+    settings?.address ||
+    settings?.work_type
+  )
+}
+
+async function ensureMobileCloudSettingsHydrated(settings: Settings | null | undefined): Promise<Settings | null | undefined> {
+  if (isElectron || !platform.isMobile || settings?.sync_enabled || hasLocalProfileSettings(settings)) return settings
+
+  try {
+    // Fresh Android installs start with sync_enabled=0 because that flag is device-local.
+    // Enable it locally before syncNow(), otherwise syncNow exits before it can pull the
+    // user's existing company/profile settings from Supabase.
+    await db.run(`UPDATE settings SET sync_enabled = 1 WHERE id = 'main'`)
+    await db.run(`DELETE FROM sync_queue WHERE table_name = ? AND record_id = ?`, ['settings', 'main'])
+    await syncNow(true)
+    return await getSettings()
+  } catch (e) {
+    console.warn('[App] mobile settings hydration failed:', e)
+    return settings
   }
 }
 import Layout from './components/Layout'
@@ -110,7 +139,8 @@ export default function App() {
           const userId = token.includes('.') ? extractUserIdFromJwt(token) : token
           if (userId) { await withStartupTimeout('open user database', () => db.switch(userId)); setUserId(userId) }
         }
-        const s = await withStartupTimeout('load settings database', () => getSettings())
+        let s = await withStartupTimeout('load settings database', () => getSettings())
+        s = await withStartupTimeout('hydrate mobile cloud settings', () => ensureMobileCloudSettingsHydrated(s), 20_000) ?? s
         if (s?.language) { i18n.changeLanguage(s.language); document.documentElement.lang = s.language }
         if (token) {
           setOnboarded(true)
@@ -187,7 +217,7 @@ export default function App() {
       setAuthenticated(true)
       if (!isNewAccount) setOnboarded(true)
       await checkSubscription()
-      const freshSettings = await getSettings()
+      const freshSettings = await ensureMobileCloudSettingsHydrated(await getSettings())
       if (freshSettings?.sync_enabled && !isElectron) setTimeout(() => syncNow(), 2000)
     }} />
   }
