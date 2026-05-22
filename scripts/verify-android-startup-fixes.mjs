@@ -13,6 +13,8 @@ const mainActivity = read('android/app/src/main/java/com/ergoflow/app/MainActivi
 const app = read('src/App.tsx')
 const platform = read('src/lib/platform.ts')
 const dbDriver = read('src/lib/db-driver.ts')
+const packageJson = JSON.parse(read('package.json'))
+const androidBuildGradle = read('android/app/build.gradle')
 
 assert(capacitorConfig.includes('server:'), 'Capacitor config should explicitly define Android WebView server settings')
 assert(capacitorConfig.includes("androidScheme: 'https'") || capacitorConfig.includes('androidScheme: "https"'), 'Android WebView should use https scheme expected by Capacitor SQLite')
@@ -22,5 +24,6 @@ assert(platform.includes('Capacitor') && platform.includes('isNativePlatform'), 
 assert(dbDriver.includes('isNativeMobile') && dbDriver.includes('webDriver'), 'database driver should not treat plain web preview as Android native SQLite')
 assert(app.includes('withStartupTimeout'), 'App startup should have a watchdog so native init hangs show an error instead of a black/loading screen')
 assert(app.includes('[App] init stage:'), 'App startup should log init stages for Android black-screen diagnosis')
+assert(androidBuildGradle.includes(`versionName "${packageJson.version}"`), 'Android versionName should match package.json version')
 
 console.log('android-startup verification passed')
