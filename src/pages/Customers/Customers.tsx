@@ -93,7 +93,7 @@ export default function Customers() {
 
   const closeModal = () => {
     if (isFormDirty()) {
-      const ok = window.confirm('ÎˆÏ‡ÎµÏ„Îµ Î±Ï€Î¿Î¸Î·ÎºÎµÏÏƒÎµÎ¹ Ï„Î¹Ï‚ Î±Î»Î»Î±Î³Î­Ï‚; Î‘Î½ ÎºÎ»ÎµÎ¯ÏƒÎµÏ„Îµ Î¸Î± Ï‡Î±Î¸Î¿ÏÎ½.')
+      const ok = window.confirm('Έχετε αποθηκεύσει τις αλλαγές; Αν κλείσετε θα χαθούν.')
       if (!ok) return
     }
     setShowModal(false)
@@ -140,7 +140,7 @@ export default function Customers() {
       setSavedEditing(null)
       load()
     } catch (e) {
-      alert('Î£Ï†Î¬Î»Î¼Î± Î±Ï€Î¿Î¸Î®ÎºÎµÏ…ÏƒÎ·Ï‚: ' + String(e))
+      alert('Σφάλμα αποθήκευσης: ' + String(e))
     } finally {
       setSaving(false)
     }
@@ -287,7 +287,7 @@ export default function Customers() {
                   <div className="flex-1 min-w-0">
                     <p className="font-medium truncate">{c.name}</p>
                     <p className="text-sm text-gray-400 truncate">
-                      {[c.company_name && c.company_name !== c.name ? c.company_name : null, c.phone ?? c.email].filter(Boolean).join(' Â· ') || 'â€”'}
+                      {[c.company_name && c.company_name !== c.name ? c.company_name : null, c.phone ?? c.email].filter(Boolean).join(' · ') || '—'}
                     </p>
                   </div>
                   {!selectMode && (
@@ -400,11 +400,11 @@ export default function Customers() {
                                                         'bg-yellow-900/40 text-yellow-400'
                         }`}>{call.status}</span>
                         <span className="text-xs text-gray-500">
-                          {call.duration_seconds ? `${Math.floor(call.duration_seconds / 60)}m ${call.duration_seconds % 60}s` : 'â€”'}
+                          {call.duration_seconds ? `${Math.floor(call.duration_seconds / 60)}m ${call.duration_seconds % 60}s` : '—'}
                         </span>
                       </div>
                       <p className="text-xs text-gray-400">
-                        {call.started_at ? new Date(call.started_at).toLocaleString() : 'â€”'}
+                        {call.started_at ? new Date(call.started_at).toLocaleString() : '—'}
                       </p>
                       {call.summary && (
                         <p className="text-xs text-gray-300 mt-1.5 line-clamp-2">{call.summary}</p>
@@ -483,10 +483,10 @@ export default function Customers() {
                         value={editing.salutation}
                         onChange={field('salutation')}
                       >
-                        <option value="">â€”</option>
-                        <option value="ÎšÎ¿Ï‚">ÎšÎ¿Ï‚</option>
-                        <option value="ÎšÎ±">ÎšÎ±</option>
-                        <option value="Î”Ï">Î”Ï</option>
+                        <option value="">—</option>
+                        <option value="Κος">Κος</option>
+                        <option value="Κα">Κα</option>
+                        <option value="Δρ">Δρ</option>
                       </select>
                       <input className={INPUT} placeholder={t('customers.firstName')} value={editing.first_name} onChange={field('first_name')} />
                       <input className={INPUT} placeholder={t('customers.lastName')} value={editing.last_name} onChange={field('last_name')} />

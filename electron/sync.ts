@@ -34,6 +34,20 @@ const PUSH_INTERVAL_MS  =  60_000 // push pending changes every 60s (only if que
 const PULL_INTERVAL_MS  = 300_000 // full pull every 5 minutes
 const FETCH_TIMEOUT_MS  =   5_000 // abort individual sync fetch calls after 5s
 
+// Settings fields that exist only on this device, are derived from subscription
+// state, or contain secrets / large local payloads. Pushing these to Supabase
+// caused PGRST204 schema errors when the cloud table lagged behind the local
+// SQLite schema, and would also leak machine-local preferences between devices.
+const SETTINGS_PUSH_EXCLUDE_COLUMNS = new Set([
+  'sync_enabled',
+  'minimize_to_tray',
+  'company_logo',
+  'bratnet_username',
+  'bratnet_api_key',
+  'ai_trial_start',
+  'ai_trial_used',
+])
+
 let consecutivePushFailures = 0
 let pushBackoffUntil = 0
 let syncWorkerRunning = false
@@ -357,10 +371,14 @@ async function pushLocalChanges(url: string, key: string, accessToken: string, o
         const { synced: _s, ...clean } = record as Record<string, unknown>
         let bodyObj: Record<string, unknown>
         if (item.table_name === 'settings') {
-          // sync_enabled is device-local — never push it to Supabase.
-          // Also exclude null fields so this device can't overwrite another device's data with nulls.
-          const { sync_enabled: _se, ...rest } = clean as Record<string, unknown>
-          bodyObj = Object.fromEntries(Object.entries(rest).filter(([, v]) => v !== null && v !== undefined))
+          // Exclude device-local/secret/runtime fields and nulls so this device
+          // cannot overwrite another device's data or push columns missing from
+          // the cloud settings schema.
+          bodyObj = Object.fromEntries(
+            Object.entries(clean as Record<string, unknown>).filter(([k, v]) =>
+              !SETTINGS_PUSH_EXCLUDE_COLUMNS.has(k) && v !== null && v !== undefined
+            )
+          )
           bodyObj['owner_id'] = ownerId
         } else {
           bodyObj = { ...clean, owner_id: ownerId }
@@ -380,9 +398,9 @@ async function pushLocalChanges(url: string, key: string, accessToken: string, o
           slog('[SYNC] Token refresh failed — aborting push')
           return false
         }
-        // PGRST204 = column not found in Supabase schema — won't be fixed by retrying, drop from queue
+        // PGRST204 = column missing from Supabase schema — won't be fixed by retrying this payload.
         if (res.status === 400 && body.includes('PGRST204')) {
-          slog(`[SYNC] Dropping ${item.table_name}/${item.record_id}: Supabase schema missing column (run migration)`)
+          slog(`[SYNC] Dropping ${item.table_name}/${item.record_id}: Supabase schema column missing; check excluded settings columns or run migration`)
           db.prepare('DELETE FROM sync_queue WHERE id = ?').run(item.id)
           continue
         }

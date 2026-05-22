@@ -155,7 +155,6 @@ export default function Layout({ children, onSignOut, tier = 'free', subscriptio
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [syncPulse, setSyncPulse] = useState(false)
   const [hiddenTabs, setHiddenTabs] = useState<string[]>([])
-  const [updateReady, setUpdateReady] = useState(false)
   const [syncEnabled, setSyncEnabled] = useState(false)
   const [offlineDaysLeft, setOfflineDaysLeft] = useState<number | null>(null)
 
@@ -175,7 +174,6 @@ export default function Layout({ children, onSignOut, tier = 'free', subscriptio
   }
 
   useEffect(() => {
-    if (isElectron) ipc.update.onReady(() => setUpdateReady(true))
     loadHiddenTabs()
 
     const onOnline  = () => setIsOnline(true)
@@ -311,18 +309,6 @@ export default function Layout({ children, onSignOut, tier = 'free', subscriptio
           {children}
         </div>
       </main>
-
-      {updateReady && (
-        <div className="fixed bottom-4 right-4 z-50 bg-brand-500 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-3">
-          <span className="text-sm font-medium">Νέα έκδοση έτοιμη</span>
-          <button
-            onClick={() => ipc.update.install()}
-            className="bg-white/20 hover:bg-white/30 px-3 py-1 rounded-lg text-sm font-semibold transition-colors"
-          >
-            Επανεκκίνηση
-          </button>
-        </div>
-      )}
     </div>
   )
 }

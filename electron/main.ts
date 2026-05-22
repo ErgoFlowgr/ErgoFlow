@@ -18,9 +18,16 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+let isInstallingUpdate = false
+let isQuitting = false
 
 // In-memory state — updated via IPC when user toggles the setting
 let minimizeToTray = false
+
+function destroyTray() {
+  try { tray?.destroy() } catch { /* ignore */ }
+  tray = null
+}
 
 function readMinimizeToTraySetting(): boolean {
   try {
@@ -46,8 +53,8 @@ function createTray() {
     {
       label: 'Έξοδος',
       click: () => {
-        tray?.destroy()
-        tray = null
+        isQuitting = true
+        destroyTray()
         app.quit()
       },
     },
@@ -142,13 +149,13 @@ app.whenReady().then(async () => {
           'Content-Security-Policy': [
             "default-src 'self'; " +
             "script-src 'self'; " +
-            "style-src 'self' 'unsafe-inline'; " +
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
             "img-src 'self' data: https:; " +
             // VAPI calls (api.vapi.ai) are made directly from the renderer via fetch.
             // There are no VAPI IPC handlers in main.ts — tier gating for VAPI features
             // happens entirely at the React layer via LockedFeature / license tier checks.
             "connect-src 'self' https://*.supabase.co https://api.vapi.ai https://api.anthropic.com; " +
-            "font-src 'self' data:;"
+            "font-src 'self' data: https://fonts.gstatic.com;"
           ],
         },
       })
@@ -161,7 +168,7 @@ app.whenReady().then(async () => {
   minimizeToTray = readMinimizeToTraySetting()
   createTray()
   mainWindow?.on('close', (event) => {
-    if (minimizeToTray) {
+    if (minimizeToTray && !isQuitting && !isInstallingUpdate) {
       event.preventDefault()
       mainWindow?.hide()
     }
@@ -178,7 +185,7 @@ app.whenReady().then(async () => {
   // Auto-updater — only in production builds
   if (!DEV) {
     autoUpdater.autoDownload = true
-    autoUpdater.autoInstallOnAppQuit = true
+    autoUpdater.autoInstallOnAppQuit = false
     autoUpdater.on('update-downloaded', () => {
       mainWindow?.webContents.send('update:ready')
     })
@@ -195,11 +202,16 @@ app.whenReady().then(async () => {
 })
 
 ipcMain.handle('update:install', () => {
-  // Disable tray-hide so window-all-closed fires and the updater can proceed
+  // Disable tray-hide/tray lifetime so NSIS can replace the running executable.
+  isInstallingUpdate = true
+  isQuitting = true
   minimizeToTray = false
-  // Destroy all windows first so no file handles remain open when NSIS replaces files
-  BrowserWindow.getAllWindows().forEach(w => w.destroy())
+  destroyTray()
   autoUpdater.quitAndInstall(false, true)
+})
+
+app.on('before-quit', () => {
+  isQuitting = true
 })
 
 app.on('window-all-closed', () => {
