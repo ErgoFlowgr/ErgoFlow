@@ -1,4 +1,5 @@
 import { isElectron } from './electron'
+import { isNativeMobile } from './platform'
 
 export interface DbDriver {
   query(sql: string, params?: unknown[]): Promise<unknown[]>
@@ -395,4 +396,12 @@ const androidDriver: DbDriver = {
   },
 }
 
-export const db: DbDriver = isElectron ? electronDriver : androidDriver
+const webDriver: DbDriver = {
+  query: () => Promise.reject(new Error('Local database is only available in Electron or native Android.')),
+  run: () => Promise.reject(new Error('Local database is only available in Electron or native Android.')),
+  get: () => Promise.reject(new Error('Local database is only available in Electron or native Android.')),
+  switch: () => Promise.reject(new Error('Local database is only available in Electron or native Android.')),
+  bulkDeleteCustomers: () => Promise.reject(new Error('Local database is only available in Electron or native Android.')),
+}
+
+export const db: DbDriver = isElectron ? electronDriver : isNativeMobile ? androidDriver : webDriver

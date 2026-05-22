@@ -4,6 +4,9 @@ const config: CapacitorConfig = {
   appId: 'com.ergoflow.app',
   appName: 'Ergoflow',
   webDir: 'dist',
+  server: {
+    androidScheme: 'https',
+  },
   // Android: Capacitor will serve the bundled React app
   android: {
     allowMixedContent: false,

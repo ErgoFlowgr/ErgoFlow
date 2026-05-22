@@ -1,5 +1,8 @@
 import { isElectron, ipc, getSupabaseConfig } from './electron'
+import { Capacitor } from '@capacitor/core'
 import { Preferences } from '@capacitor/preferences'
+
+export const isNativeMobile = !isElectron && Capacitor.isNativePlatform()
 
 const prefGet = async (key: string): Promise<string | null> => {
   const { value } = await Preferences.get({ key })
@@ -14,7 +17,7 @@ const prefRemove = async (key: string): Promise<void> => {
 
 export const platform = {
   isElectron,
-  isMobile: !isElectron,
+  isMobile: isNativeMobile,
 
   async getToken(): Promise<string | null> {
     if (isElectron) return ipc.keychain.get('supabase_access_token')

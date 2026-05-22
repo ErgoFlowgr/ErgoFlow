@@ -10,6 +10,23 @@ import { syncNow } from './lib/sync-mobile'
 function extractUserIdFromJwt(token: string): string | null {
   try { return (JSON.parse(atob(token.split('.')[1])) as { sub?: string }).sub ?? null } catch { return null }
 }
+
+const STARTUP_TIMEOUT_MS = 12_000
+
+async function withStartupTimeout<T>(stage: string, task: () => Promise<T>, timeoutMs = STARTUP_TIMEOUT_MS): Promise<T> {
+  console.info(`[App] init stage: ${stage}`)
+  let timeoutId: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      task(),
+      new Promise<T>((_resolve, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`Startup timed out during ${stage}`)), timeoutMs)
+      }),
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
 import Layout from './components/Layout'
 import Auth from './pages/Auth/Auth'
 import Onboarding from './pages/Onboarding/Onboarding'
@@ -88,17 +105,17 @@ export default function App() {
   useEffect(() => {
     const init = async () => {
       try {
-        const token = await platform.getToken()
+        const token = await withStartupTimeout('load saved session', () => platform.getToken())
         if (token) {
           const userId = token.includes('.') ? extractUserIdFromJwt(token) : token
-          if (userId) { await db.switch(userId); setUserId(userId) }
+          if (userId) { await withStartupTimeout('open user database', () => db.switch(userId)); setUserId(userId) }
         }
-        const s = await getSettings()
+        const s = await withStartupTimeout('load settings database', () => getSettings())
         if (s?.language) { i18n.changeLanguage(s.language); document.documentElement.lang = s.language }
         if (token) {
           setOnboarded(true)
           setAuthenticated(true)
-          await checkSubscription()
+          await withStartupTimeout('check subscription', () => checkSubscription(), 15_000)
           if (s?.sync_enabled) {
             if (isElectron) setTimeout(() => ipc.syncNow(), 1000)
             else setTimeout(() => syncNow(), 2000)
