@@ -1,0 +1,68 @@
+ErgoFlow development log - work with Tony Junior
+Generated: 2026-05-23 09:00:26 GTBST
+Project: D:\Projects\ErgoFlow\Claude\crm-app
+
+2026-05-22 08:29 - Tony Junior / Hermes setup
+Short summary:
+- Created and adopted the Tony Junior working style: practical, Windows-native, careful with files, focused on ErgoFlow, debugging, local operations, Telegram assistance, and long-term reliability.
+- Verified Hermes was functional on the Windows machine, including terminal/file access, config paths, OpenAI Codex auth, and SOUL.md persona setup.
+- Identified setup weak points: Hermes update available, some web/provider keys missing, Telegram/gateway not fully configured at that stage, and CRM database files needing disciplined backup thinking.
+
+2026-05-22 09:12 - ErgoFlow project discovery
+Short summary:
+- Found the real ErgoFlow source project at D:\Projects\ErgoFlow\Claude\crm-app.
+- Identified npm as the package manager and the stack as React, Vite, TypeScript, Electron, Electron Builder, Capacitor Android, Tailwind, Supabase, better-sqlite3, keytar, and Anthropic SDK.
+- Mapped the main app entry points: index.html, src/main.tsx, src/App.tsx, electron/main.ts, electron/preload.ts, electron/db.ts, electron/sync.ts, and related Electron backend modules.
+- Found available scripts for dev/start/build/electron build/android build/rebuild/preview.
+- Confirmed the app has major routes for dashboard, jobs, offers, invoices, inventory, calls, customers, chat, and settings.
+
+2026-05-22 10:36 - Startup and sync/database health check
+Short summary:
+- Ran a low-impact startup check: npm dependencies were installed, Vite started, and Electron launched.
+- Confirmed source git state stayed clean during the check.
+- Found startup sync/database problems: database connection not open, invalid SQLite bind values, and offer_items missing updated_at.
+- Recommended read-only root-cause inspection of db/sync/migration logic before patching.
+
+2026-05-22 11:34 - Telegram / Hermes gateway operations
+Short summary:
+- Verified Hermes gateway was installed as a Windows Scheduled Task named Hermes_Gateway and running in the background.
+- Confirmed it starts at Stavros logon using pythonw.exe.
+- Noted limits: it does not run before Windows login, and some Task Scheduler battery/time settings need admin rights to change.
+
+2026-05-22 11:34 - Release workflow inspection for v0.8.10
+Short summary:
+- Prepared the ErgoFlow release workflow without executing release actions.
+- Verified GitHub repo target as ErgoFlowgr/ErgoFlow and Firebase target as project ergoflow-craftsmen with Android app com.ergoflow.app.
+- Confirmed release paths: installer output at C:\Users\Stavros\Desktop\Installers, archive at E:\ErgoflowInstaller, and E:\ErgoflowBackup as read-only history.
+- Found no current GitHub releases/tags at inspection time.
+- Found version mismatch before release: package.json 0.8.9, package-lock.json 0.8.4, Android versionName 0.8.10.
+- Drafted safe staged release rules: inspect, align-version, build, draft-github-release, firebase-upload, final-report.
+
+2026-05-22 11:37 - Release operating rules saved
+Short summary:
+- Established hard release rules: always check git status first, do not print secrets, do not commit/push/release/upload unless explicitly approved, use draft GitHub releases first, and report commands/files/artifacts/verification/risks.
+- Saved ErgoFlow operational context so future release tasks can run with less repeated instruction.
+
+2026-05-22 11:50 - Version alignment to v0.8.10
+Short summary:
+- Ran the approved align-version stage only.
+- Updated package.json and package-lock.json to 0.8.10 using npm version --no-git-tag-version.
+- Verified package.json, package-lock.json, and package-lock root version all matched 0.8.10.
+- Confirmed Android already had applicationId com.ergoflow.app, versionCode 90, and versionName 0.8.10.
+- No build, commit, push, GitHub release, or Firebase upload was done.
+
+2026-05-22 18:04 - Installed Windows app health check
+Short summary:
+- Launched and inspected the installed Windows app from C:\Users\Stavros\AppData\Local\Programs\Ergoflow Craftsmen\Ergoflow Craftsmen.exe.
+- Checked dashboard, jobs, calls, customers, offers, invoices, inventory, AI assistant, settings, console/runtime errors, and sync log.
+- Confirmed the installed app opened, user/session was active, main navigation worked, and operational data rendered.
+- Found installed version was still v0.8.9, meaning v0.8.10 had not yet been built/installed.
+- Found release-clean concerns: Supabase schema missing column for settings sync, Google font blocked by CSP, a small encoding issue showing Cretewine Â· 6971961206, and plan gating for Calls/AI during testing.
+- Recommended fixing or confirming the Supabase migration before building v0.8.10.
+
+Current standing notes as of 2026-05-23 09:00:26 GTBST
+Short summary:
+- ErgoFlow source project is known and organized at D:\Projects\ErgoFlow\Claude\crm-app.
+- Release target context is known: GitHub ErgoFlowgr/ErgoFlow, Firebase project ergoflow-craftsmen, Android app ID 1:186275267371:android:e4057b4aaa503bd62dbb6e, App Distribution group testers.
+- Main technical weak link still known from checks: sync/schema health, especially Supabase/local schema mismatch around settings and earlier updated_at/database connection errors.
+- Next sensible development step is to inspect and fix the sync/schema migration issue before producing and distributing a v0.8.10 release build.
