@@ -49,11 +49,10 @@ Deno.serve(async (req: Request) => {
   ) as Record<string, unknown> | undefined
   const vapiPhoneId = String(phoneNumberObj?.id ?? '')
 
-  // The number that is calling (the customer/caller)
-  const customerObj  = call?.customer as Record<string, unknown> | undefined
-  const callerNumber = normalizePhone(
-    String(customerObj?.number ?? customerObj?.phoneNumber ?? '')
-  )
+  // The number that is calling (the customer/caller).
+  // VAPI payloads are not consistent across providers, so check all known
+  // caller locations and normalize Greek formats before using the number.
+  const callerNumber = extractCallerNumber(body)
 
   if (!vapiPhoneId) {
     console.error('No phone number ID in payload')
@@ -82,12 +81,7 @@ Deno.serve(async (req: Request) => {
   let callerContext = ''
 
   if (callerNumber) {
-    const { data: customer } = await supabase
-      .from('customers')
-      .select('id, name, address, notes')
-      .eq('owner_id', ownerId)
-      .eq('phone', callerNumber)
-      .maybeSingle()
+    const customer = await findCustomerByPhone(supabase, ownerId, callerNumber)
 
     if (customer) {
       // Fetch last call summary for a natural greeting
@@ -181,6 +175,85 @@ Deno.serve(async (req: Request) => {
   )
 })
 
-function normalizePhone(phone: string): string {
-  return phone.replace(/[\s\-().]/g, '') || ''
+function extractCallerNumber(payload: Record<string, unknown>): string {
+  const message = payload.message as Record<string, unknown> | undefined
+  const call = message?.call as Record<string, unknown> | undefined
+  const candidates = [
+    call?.customer,
+    message?.customer,
+    call?.phoneCallProviderDetails,
+    message?.phoneCallProviderDetails,
+    call,
+    message,
+  ] as Array<Record<string, unknown> | undefined>
+
+  for (const source of candidates) {
+    if (!source) continue
+    const number = firstString(source, [
+      'number', 'phoneNumber', 'phone', 'from', 'callerNumber', 'caller',
+      'fromNumber', 'customerNumber', 'ani',
+    ])
+    const normalized = normalizeGreekPhone(number)
+    if (normalized) return normalized
+  }
+
+  return ''
+}
+
+async function findCustomerByPhone(
+  supabase: ReturnType<typeof createClient>,
+  ownerId: string,
+  callerNumber: string,
+): Promise<{ id: string; name: string; address: string | null; notes: string | null } | null> {
+  const { data: customers } = await supabase
+    .from('customers')
+    .select('id, name, address, notes, phone, mobile')
+    .eq('owner_id', ownerId)
+
+  const callerVariants = phoneVariants(callerNumber)
+
+  return (customers ?? []).find((customer) => {
+    const phone = String(customer.phone ?? '')
+    const mobile = String(customer.mobile ?? '')
+    return [...phoneVariants(phone), ...phoneVariants(mobile)].some((v) => callerVariants.has(v))
+  }) ?? null
+}
+
+function firstString(source: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = source[key]
+    if (typeof value === 'string' && value.trim()) return value
+    if (typeof value === 'number') return String(value)
+  }
+  return ''
+}
+
+function normalizeGreekPhone(phone: string): string {
+  let value = phone.trim()
+  if (!value) return ''
+
+  const hasPlus = value.startsWith('+')
+  value = value.replace(/[^\d+]/g, '')
+  if (value.startsWith('00')) value = `+${value.slice(2)}`
+  else if (!hasPlus) value = value.replace(/^\+/, '')
+
+  const digits = value.replace(/^\+/, '')
+  if (value.startsWith('+')) return `+${digits}`
+  if (digits.length === 10 && (digits.startsWith('69') || digits.startsWith('2'))) return `+30${digits}`
+  if (digits.length === 12 && digits.startsWith('30')) return `+${digits}`
+  return digits ? `+${digits}` : ''
+}
+
+function phoneVariants(phone: string): Set<string> {
+  const normalized = normalizeGreekPhone(phone)
+  const digits = normalized.replace(/^\+/, '')
+  const variants = new Set<string>()
+  if (normalized) variants.add(normalized)
+  if (digits) variants.add(digits)
+  if (digits.startsWith('30') && digits.length > 2) {
+    variants.add(digits.slice(2))
+    variants.add(`0${digits.slice(2)}`)
+  }
+  if (phone) variants.add(phone.replace(/[^\d+]/g, ''))
+  return variants
 }

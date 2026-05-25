@@ -100,16 +100,11 @@ async function lookupContact(
   args: Record<string, unknown>,
   ownerId: string
 ): Promise<string> {
-  const phone = normalizePhone(String(args.phone ?? ''))
+  const phone = normalizeGreekPhone(String(args.phone ?? ''))
 
   if (!phone) return 'No phone number provided.'
 
-  const { data: customer } = await supabase
-    .from('customers')
-    .select('id, name, email, address, notes')
-    .eq('owner_id', ownerId)
-    .eq('phone', phone)
-    .maybeSingle()
+  const customer = await findCustomerByPhone(supabase, ownerId, phone)
 
   if (!customer) {
     return `No customer found for ${phone}. This appears to be a new caller.`
@@ -153,18 +148,13 @@ async function createContact(
   args: Record<string, unknown>,
   ownerId: string
 ): Promise<string> {
-  const phone = normalizePhone(String(args.phone ?? ''))
+  const phone = normalizeGreekPhone(String(args.phone ?? ''))
   const name  = String(args.name ?? phone)
 
   if (!phone) return 'No phone number provided.'
 
-  // Check if already exists for this owner
-  const { data: existing } = await supabase
-    .from('customers')
-    .select('id, name')
-    .eq('owner_id', ownerId)
-    .eq('phone', phone)
-    .maybeSingle()
+  // Check if already exists for this owner, including Greek local/E.164 variants
+  const existing = await findCustomerByPhone(supabase, ownerId, phone)
 
   if (existing) {
     return `Customer already exists: ${existing.name}.`
@@ -190,16 +180,11 @@ async function updateCustomer(
   args: Record<string, unknown>,
   ownerId: string
 ): Promise<string> {
-  const phone = normalizePhone(String(args.phone ?? ''))
+  const phone = normalizeGreekPhone(String(args.phone ?? ''))
 
   if (!phone) return 'No phone number provided.'
 
-  const { data: customer } = await supabase
-    .from('customers')
-    .select('id, name')
-    .eq('owner_id', ownerId)
-    .eq('phone', phone)
-    .maybeSingle()
+  const customer = await findCustomerByPhone(supabase, ownerId, phone)
 
   if (!customer) {
     return `No customer found for ${phone}. Cannot update.`
@@ -237,7 +222,52 @@ async function updateCustomer(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function normalizePhone(phone: string): string {
-  // Strip spaces/dashes, keep + prefix
-  return phone.replace(/[\s\-().]/g, '') || ''
+
+async function findCustomerByPhone(
+  supabase: ReturnType<typeof createClient>,
+  ownerId: string,
+  callerNumber: string,
+): Promise<{ id: string; name: string; email?: string | null; address?: string | null; notes?: string | null } | null> {
+  const { data: customers } = await supabase
+    .from('customers')
+    .select('id, name, email, address, notes, phone, mobile')
+    .eq('owner_id', ownerId)
+
+  const callerVariants = phoneVariants(callerNumber)
+
+  return (customers ?? []).find((customer) => {
+    const phone = String(customer.phone ?? '')
+    const mobile = String(customer.mobile ?? '')
+    return [...phoneVariants(phone), ...phoneVariants(mobile)].some((v) => callerVariants.has(v))
+  }) ?? null
+}
+
+function normalizeGreekPhone(phone: string): string {
+  let value = phone.trim()
+  if (!value) return ''
+
+  const hasPlus = value.startsWith('+')
+  value = value.replace(/[^\d+]/g, '')
+  if (value.startsWith('00')) value = `+${value.slice(2)}`
+  else if (!hasPlus) value = value.replace(/^\+/, '')
+
+  const digits = value.replace(/^\+/, '')
+  if (value.startsWith('+')) return `+${digits}`
+  if (digits.length === 10 && (digits.startsWith('69') || digits.startsWith('2'))) return `+30${digits}`
+  if (digits.length === 12 && digits.startsWith('30')) return `+${digits}`
+  return digits ? `+${digits}` : ''
+}
+
+function phoneVariants(phone: string): Set<string> {
+  const normalized = normalizeGreekPhone(phone)
+  const digits = normalized.replace(/^\+/, '')
+  const variants = new Set<string>()
+  if (normalized) variants.add(normalized)
+  if (digits) variants.add(digits)
+  if (digits.startsWith('30') && digits.length > 2) {
+    variants.add(digits.slice(2))
+    variants.add(`0${digits.slice(2)}`)
+  }
+  if (phone) variants.add(phone.replace(/[^\d+]/g, ''))
+  return variants
 }
