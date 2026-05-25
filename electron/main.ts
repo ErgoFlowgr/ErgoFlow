@@ -124,6 +124,18 @@ function extractUserIdFromToken(token: string): string | null {
   } catch { return null }
 }
 
+function normalizeSqlParam(value: unknown): number | string | bigint | Buffer | null {
+  if (typeof value === 'boolean') return value ? 1 : 0
+  if (value === undefined || value === null) return null
+  if (typeof value === 'number' || typeof value === 'string' || typeof value === 'bigint') return value
+  if (Buffer.isBuffer(value)) return value
+  return String(value)
+}
+
+function normalizeSqlParams(params: unknown[] = []): Array<number | string | bigint | Buffer | null> {
+  return params.map(normalizeSqlParam)
+}
+
 app.whenReady().then(async () => {
   app.setAppUserModelId('com.ergoflow.crm')
   await initDatabase()
@@ -239,11 +251,11 @@ ipcMain.handle('keychain:delete', async (_e, key: string) => {
 // ── IPC: SQLite ───────────────────────────────────────────────────────────
 ipcMain.handle('db:query', async (_e, sql: string, params: unknown[] = []) => {
   const db = getDb()
-  return db.prepare(sql).all(...params)
+  return db.prepare(sql).all(...normalizeSqlParams(params))
 })
 ipcMain.handle('db:run', async (_e, sql: string, params: unknown[] = []) => {
   const db = getDb()
-  return db.prepare(sql).run(...params)
+  return db.prepare(sql).run(...normalizeSqlParams(params))
 })
 ipcMain.handle('db:bulkDeleteCustomers', async (_e, ids: string[]) => {
   const db = getDb()
@@ -259,7 +271,7 @@ ipcMain.handle('db:bulkDeleteCustomers', async (_e, ids: string[]) => {
 })
 ipcMain.handle('db:get', async (_e, sql: string, params: unknown[] = []) => {
   const db = getDb()
-  return db.prepare(sql).get(...params)
+  return db.prepare(sql).get(...normalizeSqlParams(params))
 })
 ipcMain.handle('db:switch', (_e, tokenOrUserId: string) => {
   let userId: string | null = null
