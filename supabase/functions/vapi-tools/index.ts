@@ -46,7 +46,12 @@ Deno.serve(async (req: Request) => {
   }
 
   const message = body.message as Record<string, unknown> | undefined
-  const toolCallList = message?.toolCallList as Array<Record<string, unknown>> | undefined
+  const toolCallList = (
+    message?.toolCallList ??
+    message?.toolCalls ??
+    body.toolCallList ??
+    body.toolCalls
+  ) as Array<Record<string, unknown>> | undefined
 
   if (!toolCallList?.length) {
     return new Response(JSON.stringify({ results: [] }), {
@@ -62,14 +67,8 @@ Deno.serve(async (req: Request) => {
     toolCallList.map(async (toolCall) => {
       const toolCallId = String(toolCall.id ?? '')
       const fn = toolCall.function as Record<string, unknown> | undefined
-      const name = String(fn?.name ?? '')
-      let args: Record<string, unknown> = {}
-
-      try {
-        args = JSON.parse(String(fn?.arguments ?? '{}'))
-      } catch {
-        // leave args empty
-      }
+      const name = String(fn?.name ?? toolCall.name ?? '')
+      const args = extractToolArgs(toolCall, fn)
 
       let result: string
 
@@ -222,6 +221,38 @@ async function updateCustomer(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function extractToolArgs(
+  toolCall: Record<string, unknown>,
+  fn: Record<string, unknown> | undefined,
+): Record<string, unknown> {
+  const candidates = [
+    fn?.arguments,
+    fn?.parameters,
+    toolCall.arguments,
+    toolCall.parameters,
+    toolCall.input,
+  ]
+
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    if (typeof candidate === 'object' && !Array.isArray(candidate)) {
+      return candidate as Record<string, unknown>
+    }
+    if (typeof candidate === 'string') {
+      try {
+        const parsed = JSON.parse(candidate)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>
+        }
+      } catch {
+        // try the next candidate
+      }
+    }
+  }
+
+  return {}
+}
 
 async function findCustomerByPhone(
   supabase: ReturnType<typeof createClient>,
