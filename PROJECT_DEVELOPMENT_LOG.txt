@@ -133,11 +133,18 @@ Short summary:
 - The static ErgoFlow website folder at D:\Projects\ErgoFlow\Claude\Webside ai was updated separately to remove public download links and mark ErgoFlow Craftsmen CRM as Coming Soon.
 - That website folder is not a git repository, so it is recorded here only as related project work, not as a crm-app tracked change.
 
-Current standing notes as of 2026-05-23 17:48:13 GTBST
+2026-05-26 17:09 - VAPI Gianna voice and caller-ID investigation
+Short summary:
+- Investigated a live VAPI call problem where Gianna used the wrong voice and asked the caller for a phone number even though the incoming call had caller ID.
+- Restored Gianna's VAPI voice to ElevenLabs voiceId Jv2zcgjn9Qu0uNMKJjb1 via the VAPI assistant API.
+- Added a CALLER-ID HARD RULE to the assistant prompt so {{customer.number}} is treated as the caller phone number and the assistant must not ask for it again.
+- Found the deployed vapi-tools edge function still fails when VAPI sends tool-call arguments as an object instead of a JSON string, returning "No phone number provided." Local code was patched to accept both shapes, but deployment is blocked until Supabase access token/login is available.
+
+Current standing notes as of 2026-05-26 17:09:09 GTBST
 Short summary:
 - ErgoFlow source project is known and organized at D:\Projects\ErgoFlow\Claude\crm-app.
 - Current app package version in package.json is 0.8.12.
 - Release target context is known: GitHub ErgoFlowgr/ErgoFlow, Firebase project ergoflow-craftsmen, Android app ID 1:186275267371:android:e4057b4aaa503bd62dbb6e, App Distribution group testers.
 - The project now has verification scripts for release fixes, Android startup assumptions, React hook imports, and mobile Settings sync assumptions.
 - Main product judgment: offline-first design is right for tradesmen; most work can be done without internet after initial sync, but invoice sending needs connection.
-- Main weak links to keep watching: first-sync UX clarity, settings/status messaging, installer/update behavior around running tray processes, and release discipline around explicit approval.
+- Main weak links to keep watching: first-sync UX clarity, settings/status messaging, installer/update behavior around running tray processes, release discipline around explicit approval, and VAPI edge-function deployment credentials.
