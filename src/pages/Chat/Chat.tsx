@@ -6,7 +6,6 @@ import { processPDF } from '../../lib/pdf'
 import { platform } from '../../lib/platform'
 import { activateAITrial } from '../../lib/license'
 import { useSubscription } from '../../App'
-import { isElectron, ipc } from '../../lib/electron'
 
 // Extend Window for SpeechRecognition (Chromium/Electron)
 declare global {
