@@ -11,7 +11,7 @@ const TIER_LABELS: Record<string, string> = {
 }
 
 export default function LockedFeature({ requiredTier, children }: Props) {
-  const { tier, status, requestUpgrade } = useSubscription()
+  const { tier, requestUpgrade } = useSubscription()
 
   const tiers = ['free', 'basic', 'plus', 'pro']
   const userLevel     = tiers.indexOf(tier)

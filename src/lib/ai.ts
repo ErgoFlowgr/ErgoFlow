@@ -285,7 +285,7 @@ Only include ONE <action> block per response. Never include it for questions or 
 export async function translateJobFields(
   fields: { title: string; description: string; notes: string },
   targetLanguage: string,
-  config: AIConfig
+  _config: AIConfig
 ): Promise<{ title: string; description: string; notes: string }> {
   const langName = targetLanguage === 'el' ? 'Greek' : 'English'
   const prompt = `Translate the following job fields to ${langName}. Return ONLY valid JSON with keys "title", "description", "notes". Do not add explanations.

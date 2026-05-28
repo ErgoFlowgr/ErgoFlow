@@ -22,9 +22,7 @@ function AppVersion() {
     if (isElectron) {
       ipc.getVersion().then(setVersion).catch(() => {})
     } else {
-      import('@capacitor/device').then(({ Device }) =>
-        Device.getInfo().then(info => setVersion(info.appVersion ?? null)).catch(() => {})
-      ).catch(() => {})
+      setVersion(null)
     }
   }, [])
   if (!version) return null
@@ -150,7 +148,7 @@ interface LayoutProps {
   subscriptionStatus?: string
 }
 
-export default function Layout({ children, onSignOut, tier = 'free', subscriptionStatus = 'active' }: LayoutProps) {
+export default function Layout({ children, onSignOut, tier = 'free', subscriptionStatus: _subscriptionStatus = 'active' }: LayoutProps) {
   const { t } = useTranslation()
   const [isOnline, setIsOnline] = useState(navigator.onLine)
   const [syncPulse, setSyncPulse] = useState(false)

@@ -10,7 +10,7 @@
  */
 
 import { getSettings, saveSettings } from './db'
-import { isElectron, ipc, getSupabaseConfig } from './electron'
+import { getSupabaseConfig } from './electron'
 import { platform } from './platform'
 
 export interface LicenseStatus {
@@ -32,6 +32,7 @@ interface RawSubData {
   vapiMinutesUsed: number
   vapiPhoneNumber: string | null
   aiTrialStart: string | null
+  aiTrialActive: boolean
   aiTrialUsed: boolean
 }
 

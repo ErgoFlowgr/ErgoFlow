@@ -98,8 +98,10 @@ export default function Jobs() {
   const location = useLocation()
 
   const load = useCallback(async () => {
+    let loadedJobs: Job[] = []
     try {
       const [j, c] = await Promise.all([getJobs(), getCustomers()])
+      loadedJobs = j
       setJobs(j)
       setCustomers(c)
     } catch (e) {
@@ -115,7 +117,7 @@ export default function Jobs() {
     // Auto-open a specific job if navigated here with a jobId in state
     const jobId = state?.jobId
     if (jobId) {
-      const target = j.find(x => x.id === jobId)
+      const target = loadedJobs.find(x => x.id === jobId)
       if (target) {
         setEditingJob(target)
         setTranslateError('')
