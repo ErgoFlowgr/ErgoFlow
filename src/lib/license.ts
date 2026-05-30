@@ -22,7 +22,6 @@ export interface LicenseStatus {
   aiTrialUsed: boolean
 }
 
-const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
 const SEVEN_DAYS_MS  = 7  * 24 * 60 * 60 * 1000
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000
 
@@ -152,7 +151,7 @@ export async function checkLicense(): Promise<LicenseStatus> {
   const s = await getSettings()
   const verifiedAt = s?.license_verified_at ? new Date(s.license_verified_at).getTime() : null
 
-  // Always try online first — so tier changes (trial→pro) are reflected immediately
+  // Always try online first — so tier changes (free→paid, paid→free) are reflected immediately
   const fresh = await verifyOnline()
 
   if (fresh) {
@@ -173,38 +172,31 @@ export async function checkLicense(): Promise<LicenseStatus> {
     }
   }
 
-  // Online failed — fall back to cache
-  if (verifiedAt !== null && s?.license_status) {
+  // Online failed — fall back to cache.
+  //
+  // Policy (set by product owner):
+  //   - There is no "trial" tier anymore. Free tier covers unpaid users
+  //     (5 invoices/month). No 30-day grace nag.
+  //   - If a paid user goes offline, honor the cached paid tier for up to
+  //     7 days. After that, the account silently degrades to free/active
+  //     until they reconnect and re-verify.
+  //   - Cached free is always served as free/active (nothing to expire).
+  const cachedTrialStart = s?.ai_trial_start ?? null
+  const cachedTrialUsed  = !!s?.ai_trial_used
+  const cachedTrialActive =
+    cachedTrialUsed &&
+    cachedTrialStart !== null &&
+    Date.now() - new Date(cachedTrialStart).getTime() < FOURTEEN_DAYS_MS
+
+  if (verifiedAt !== null && s?.license_tier) {
     const cacheAge = Date.now() - verifiedAt
-    // Recompute aiTrialActive from cached values
-    const cachedTrialStart = s.ai_trial_start ?? null
-    const cachedTrialUsed  = !!s.ai_trial_used
-    const cachedTrialActive =
-      cachedTrialUsed &&
-      cachedTrialStart !== null &&
-      Date.now() - new Date(cachedTrialStart).getTime() < FOURTEEN_DAYS_MS
+    const cachedTier = s.license_tier as string
+    const isPaid = PAID_TIERS.has(cachedTier)
 
-    if (cacheAge < THIRTY_DAYS_MS) {
-      const cachedTier = (s.license_tier ?? 'free') as string
-      const isPaid = PAID_TIERS.has(cachedTier)
-
-      // Tighter trust window for paid tiers: avoid serving "Plus/Pro" from
-      // weeks-old cache when the server-side row may have been downgraded.
-      if (isPaid && cacheAge >= SEVEN_DAYS_MS) {
-        logLicense(`paid cache stale (${Math.round(cacheAge / 86400000)}d) — degrading to free until re-verified`)
-        return {
-          status:          'verification_required',
-          tier:            'free',
-          vapiMinutesUsed: 0,
-          vapiPhoneNumber: null,
-          aiTrialActive:   false,
-          aiTrialUsed:     cachedTrialUsed,
-        }
-      }
-
-      // Within grace period — allow access with cached data
+    if (isPaid && cacheAge < SEVEN_DAYS_MS) {
+      // Within 7-day offline grace for paid tier — honor cached paid access.
       return {
-        status:          s.license_status as LicenseStatus['status'],
+        status:          'active',
         tier:            cachedTier,
         vapiMinutesUsed: 0,
         vapiPhoneNumber: null,
@@ -212,25 +204,20 @@ export async function checkLicense(): Promise<LicenseStatus> {
         aiTrialUsed:     cachedTrialUsed,
       }
     }
-    // Grace period expired — require reconnection
-    return {
-      status:          'verification_required',
-      tier:            s.license_tier ?? 'free',
-      vapiMinutesUsed: 0,
-      vapiPhoneNumber: null,
-      aiTrialActive:   false,
-      aiTrialUsed:     cachedTrialUsed,
+
+    if (isPaid) {
+      logLicense(`paid cache stale (${Math.round(cacheAge / 86400000)}d) — degrading to free`)
     }
   }
 
-  // First install — never verified, online failed — give free access
+  // Default: free / active. Covers cached-free, stale-paid, and first-install.
   return {
     status:          'active',
     tier:            'free',
     vapiMinutesUsed: 0,
     vapiPhoneNumber: null,
-    aiTrialActive:   false,
-    aiTrialUsed:     false,
+    aiTrialActive:   cachedTrialActive,
+    aiTrialUsed:     cachedTrialUsed,
   }
 }
 
