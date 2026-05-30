@@ -4,6 +4,7 @@
  * Protected by a shared secret in the URL query string.
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { verifyWebhookSecret } from '../_shared/webhook-auth.ts'
 
 const WEBHOOK_SECRET    = Deno.env.get('VAPI_WEBHOOK_SECRET') ?? ''
 const SUPABASE_URL      = Deno.env.get('SUPABASE_URL') ?? ''
@@ -17,12 +18,13 @@ Deno.serve(async (req: Request) => {
   }
 
   // ── Security: validate secret ──────────────────────────────────────────
-  const url = new URL(req.url)
-  const secret = url.searchParams.get('secret')
+  // Prefers Authorization: Bearer header, falls back to legacy ?secret=
+  // query string for backward compatibility.
+  const unauthorized = verifyWebhookSecret(req, WEBHOOK_SECRET)
+  if (unauthorized) return unauthorized
 
-  if (secret !== WEBHOOK_SECRET) {
-    return new Response('Unauthorized', { status: 401 })
-  }
+  // URL kept around for non-auth query params (e.g. legacy ?owner=).
+  const url = new URL(req.url)
 
   if (req.method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405 })
