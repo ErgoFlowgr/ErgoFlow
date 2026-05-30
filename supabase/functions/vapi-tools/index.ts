@@ -8,6 +8,7 @@
  * One function, all customers, fully isolated via owner_id.
  */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { verifyWebhookSecret } from '../_shared/webhook-auth.ts'
 
 const WEBHOOK_SECRET = Deno.env.get('VAPI_WEBHOOK_SECRET') ?? ''
 const SUPABASE_URL   = Deno.env.get('SUPABASE_URL') ?? ''
@@ -22,11 +23,8 @@ Deno.serve(async (req: Request) => {
 
   // ── Security ──────────────────────────────────────────────────────────────
   const url = new URL(req.url)
-  const secret = url.searchParams.get('secret')
-
-  if (secret !== WEBHOOK_SECRET) {
-    return new Response('Unauthorized', { status: 401 })
-  }
+  const unauthorized = verifyWebhookSecret(req, WEBHOOK_SECRET)
+  if (unauthorized) return unauthorized
 
   // ── Owner scoping ─────────────────────────────────────────────────────────
   const ownerId = url.searchParams.get('owner')

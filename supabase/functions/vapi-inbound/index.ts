@@ -23,12 +23,8 @@ Deno.serve(async (req: Request) => {
     return new Response('Service misconfigured', { status: 500 })
   }
 
-  const url    = new URL(req.url)
-  const secret = url.searchParams.get('secret')
-
-  if (secret !== WEBHOOK_SECRET) {
-    return new Response('Unauthorized', { status: 401 })
-  }
+  const unauthorized = verifyWebhookSecret(req, WEBHOOK_SECRET)
+  if (unauthorized) return unauthorized
 
   if (req.method !== 'POST') {
     return new Response('Method Not Allowed', { status: 405 })
