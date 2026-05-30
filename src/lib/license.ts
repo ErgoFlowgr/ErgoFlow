@@ -23,8 +23,23 @@ export interface LicenseStatus {
 }
 
 const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000
-
+const SEVEN_DAYS_MS  = 7  * 24 * 60 * 60 * 1000
 const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000
+
+// Tiers that should NOT be trusted from stale cache for long.
+// A paying tier shown to a user who lost access on the server is a worse
+// outcome than briefly downgrading a real paying user who is offline.
+const PAID_TIERS = new Set(['pro', 'plus', 'business', 'enterprise'])
+
+// Last verifyOnline() failure reason — surfaced for debugging.
+// Read from DevTools: (await import('./src/lib/license')).getLastVerifyError()
+let lastVerifyError: string | null = null
+export function getLastVerifyError(): string | null { return lastVerifyError }
+
+function logLicense(msg: string): void {
+  // eslint-disable-next-line no-console
+  console.warn('[LICENSE]', msg)
+}
 
 interface RawSubData {
   status: string
