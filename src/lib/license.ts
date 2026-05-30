@@ -54,10 +54,10 @@ interface RawSubData {
 async function verifyOnline(): Promise<RawSubData | null> {
   try {
     const config = await getSupabaseConfig()
-    if (!config) return null
+    if (!config) { lastVerifyError = 'no_supabase_config'; logLicense('verify skipped: no config'); return null }
 
     let token = await platform.getToken()
-    if (!token) return null
+    if (!token) { lastVerifyError = 'no_token'; logLicense('verify skipped: no token'); return null }
 
     // If token is expired (or expiring within 60s), refresh it
     try {
@@ -100,7 +100,11 @@ async function verifyOnline(): Promise<RawSubData | null> {
       `${config.url}/rest/v1/subscriptions?user_id=eq.${userId}&select=*&limit=1`,
       { headers, signal: AbortSignal.timeout(8000) }
     )
-    if (!res.ok) return null
+    if (!res.ok) {
+      lastVerifyError = `subscriptions_http_${res.status}`
+      logLicense(`verify failed: HTTP ${res.status} on /subscriptions`)
+      return null
+    }
 
     type SubRow = { status: string; trial_end: string; tier: string; vapi_minutes_used: number; vapi_phone_number: string | null; ai_trial_start: string | null; ai_trial_used: boolean }
     const rows = await res.json() as SubRow[]
@@ -127,6 +131,7 @@ async function verifyOnline(): Promise<RawSubData | null> {
       aiTrialStart !== null &&
       Date.now() - new Date(aiTrialStart).getTime() < FOURTEEN_DAYS_MS
 
+    lastVerifyError = null
     return {
       status:          sub.status,
       tier:            sub.tier ?? 'free',
@@ -136,7 +141,9 @@ async function verifyOnline(): Promise<RawSubData | null> {
       aiTrialUsed,
       aiTrialActive,
     }
-  } catch {
+  } catch (e) {
+    lastVerifyError = e instanceof Error ? `${e.name}:${e.message}` : String(e)
+    logLicense(`verify threw: ${lastVerifyError}`)
     return null
   }
 }
@@ -178,10 +185,27 @@ export async function checkLicense(): Promise<LicenseStatus> {
       Date.now() - new Date(cachedTrialStart).getTime() < FOURTEEN_DAYS_MS
 
     if (cacheAge < THIRTY_DAYS_MS) {
+      const cachedTier = (s.license_tier ?? 'free') as string
+      const isPaid = PAID_TIERS.has(cachedTier)
+
+      // Tighter trust window for paid tiers: avoid serving "Plus/Pro" from
+      // weeks-old cache when the server-side row may have been downgraded.
+      if (isPaid && cacheAge >= SEVEN_DAYS_MS) {
+        logLicense(`paid cache stale (${Math.round(cacheAge / 86400000)}d) — degrading to free until re-verified`)
+        return {
+          status:          'verification_required',
+          tier:            'free',
+          vapiMinutesUsed: 0,
+          vapiPhoneNumber: null,
+          aiTrialActive:   false,
+          aiTrialUsed:     cachedTrialUsed,
+        }
+      }
+
       // Within grace period — allow access with cached data
       return {
         status:          s.license_status as LicenseStatus['status'],
-        tier:            s.license_tier ?? 'free',
+        tier:            cachedTier,
         vapiMinutesUsed: 0,
         vapiPhoneNumber: null,
         aiTrialActive:   cachedTrialActive,
@@ -207,6 +231,45 @@ export async function checkLicense(): Promise<LicenseStatus> {
     vapiPhoneNumber: null,
     aiTrialActive:   false,
     aiTrialUsed:     false,
+  }
+}
+
+/**
+ * Force a fresh online verification, ignoring local cache.
+ * Use this from Settings ("Re-check license") or DevTools to recover from
+ * a stale cache showing the wrong tier:
+ *   import('./src/lib/license').then(m => m.forceVerifyLicense()).then(console.log)
+ */
+export async function forceVerifyLicense(): Promise<LicenseStatus & { verified: boolean; error: string | null }> {
+  const fresh = await verifyOnline()
+  if (fresh) {
+    await saveSettings({
+      license_verified_at: new Date().toISOString(),
+      license_tier:        fresh.tier,
+      license_status:      fresh.status,
+      ai_trial_start:      fresh.aiTrialStart ?? null,
+      ai_trial_used:       fresh.aiTrialUsed ? true : false,
+    } as Parameters<typeof saveSettings>[0])
+    return {
+      status:          fresh.status as LicenseStatus['status'],
+      tier:            fresh.tier,
+      vapiMinutesUsed: fresh.vapiMinutesUsed,
+      vapiPhoneNumber: fresh.vapiPhoneNumber,
+      aiTrialActive:   fresh.aiTrialActive,
+      aiTrialUsed:     fresh.aiTrialUsed,
+      verified:        true,
+      error:           null,
+    }
+  }
+  return {
+    status:          'verification_required',
+    tier:            'free',
+    vapiMinutesUsed: 0,
+    vapiPhoneNumber: null,
+    aiTrialActive:   false,
+    aiTrialUsed:     false,
+    verified:        false,
+    error:           lastVerifyError,
   }
 }
 
