@@ -131,8 +131,16 @@ export default function Dashboard() {
   useEffect(() => {
     load()
     const interval = setInterval(load, 30_000)
-    if (isElectron) ipc.on('sync:complete', load)
-    return () => { clearInterval(interval); if (isElectron) ipc.off('sync:complete', load) }
+    if (isElectron) {
+      ipc.on('sync:complete', load)
+    } else {
+      window.addEventListener('sync:complete', load)
+    }
+    return () => {
+      clearInterval(interval)
+      if (isElectron) ipc.off('sync:complete', load)
+      else window.removeEventListener('sync:complete', load)
+    }
   }, [load])
 
   if (loading) {
