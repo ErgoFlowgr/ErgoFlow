@@ -67,6 +67,7 @@ export default function SettingsPage() {
 
   const handleSyncNow = async () => {
     setSyncStatus('syncing')
+    setSyncError(null)
     if (isElectron) {
       const cleanup = () => {
         ipc.off('sync:complete', onComplete)
@@ -75,21 +76,33 @@ export default function SettingsPage() {
       const onComplete = () => {
         cleanup()
         setSyncStatus('ok')
+        setSyncError(null)
         loadLastSync()
         setTimeout(() => setSyncStatus('idle'), 3000)
       }
-      const onError = () => {
+      const onError = (payload?: { message?: string; reason?: string } | string) => {
         cleanup()
         setSyncStatus('error')
+        const reason = typeof payload === 'string' ? payload : (payload?.message || payload?.reason)
+        setSyncError(reason || 'sync failed')
         setTimeout(() => setSyncStatus('idle'), 3000)
       }
       ipc.on('sync:complete', onComplete)
       ipc.on('sync:error', onError)
       ipc.syncNow()
     } else {
+      let mobileSyncReason = ''
+      const onError = (event: Event) => {
+        const detail = event instanceof CustomEvent ? event.detail as { reason?: string } : undefined
+        mobileSyncReason = detail?.reason || 'sync failed'
+        setSyncError(mobileSyncReason)
+      }
+      window.addEventListener('sync:error', onError, { once: true })
       const ok = await syncNow(true)
+      if (ok) setSyncError(null)
       await loadLastSync()
       setSyncStatus(ok ? 'ok' : 'error')
+      if (!ok && !mobileSyncReason) setSyncError('sync failed')
       setTimeout(() => setSyncStatus('idle'), 3000)
     }
   }
@@ -607,6 +620,11 @@ export default function SettingsPage() {
              'Συγχρονισμός τώρα'}
           </button>
         </div>
+        {syncError && (
+          <div className="mt-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300 break-words">
+            Sync σφάλμα: {syncError}
+          </div>
+        )}
         {platform.isMobile && (
           <div className="pt-2 border-t border-surface-600">
             <button
