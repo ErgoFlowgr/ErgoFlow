@@ -1,7 +1,9 @@
 import fs from 'node:fs'
 
 const app = fs.readFileSync('src/App.tsx', 'utf8')
+const auth = fs.readFileSync('src/pages/Auth/Auth.tsx', 'utf8')
 const syncMobile = fs.readFileSync('src/lib/sync-mobile.ts', 'utf8')
+const androidManifest = fs.readFileSync('android/app/src/main/AndroidManifest.xml', 'utf8')
 
 function assert(condition, message) {
   if (!condition) {
@@ -33,6 +35,26 @@ assert(
 assert(
   /setTimeout\(\(\) => syncNow\(true\), 2000\)/.test(app),
   'Android startup/login sync must force a full pull so a stale last_pull_at cannot hide older cloud Jobs rows'
+)
+
+assert(
+  androidManifest.includes('android:allowBackup="false"'),
+  'Android app backup must be disabled so reinstall/fresh tester installs do not restore old auth Preferences'
+)
+
+assert(
+  androidManifest.includes('android:fullBackupContent="false"'),
+  'Android full backup must be disabled so stored auth/session data cannot be restored into a fresh install'
+)
+
+assert(
+  !auth.includes('setKeychainValue(\'saved_password\'') && !auth.includes('setKeychainValue("saved_password"'),
+  'Auth must not persist saved_password; first launch must require explicit password entry'
+)
+
+assert(
+  !auth.includes('autoSubmitPending'),
+  'Auth must not auto-submit restored credentials; first launch should stay on Sign In / Create Account'
 )
 
 assert(

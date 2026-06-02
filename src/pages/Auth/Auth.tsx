@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { getSupabaseConfig } from '../../lib/electron'
 import { platform } from '../../lib/platform'
 import { db } from '../../lib/db-driver'
@@ -15,28 +15,22 @@ export default function Auth({ onAuth }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [info, setInfo] = useState('')
-  const autoSubmitPending = useRef(false)
 
   useEffect(() => {
     const loadSaved = async () => {
       const savedEmail = await platform.getKeychainValue('saved_email')
-      const savedPassword = await platform.getKeychainValue('saved_password')
-      if (savedEmail && savedPassword) {
+      // Do not auto-fill or auto-submit saved passwords on mobile. Android can
+      // restore app Preferences from device backup after reinstall, which made a
+      // "fresh" install silently log into an old account instead of showing the
+      // Sign In / Create Account screen. Keep only email convenience; require an
+      // explicit user action and password entry.
+      await platform.removeKeychainValue('saved_password').catch(() => {})
+      if (savedEmail) {
         setEmail(savedEmail)
-        setPassword(savedPassword)
-        autoSubmitPending.current = true
       }
     }
     loadSaved()
   }, [])
-
-  // Auto-submit once saved credentials are populated into state
-  useEffect(() => {
-    if (autoSubmitPending.current && email && password) {
-      autoSubmitPending.current = false
-      signIn(email, password)
-    }
-  }, [email, password])
 
   const storeToken = async (accessToken: string, refreshToken?: string) => {
     await platform.setToken(accessToken)
@@ -70,7 +64,7 @@ export default function Auth({ onAuth }: Props) {
       if (data.user?.id) await db.switch(data.user.id)
       await storeToken(data.access_token ?? '', data.refresh_token)
       await platform.setKeychainValue('saved_email', signinEmail)
-      await platform.setKeychainValue('saved_password', signinPassword)
+      await platform.removeKeychainValue('saved_password').catch(() => {})
       onAuth(false)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -107,7 +101,7 @@ export default function Auth({ onAuth }: Props) {
         if (data.user?.id) await db.switch(data.user.id)
         await storeToken(data.access_token, data.refresh_token)
         await platform.setKeychainValue('saved_email', email)
-        await platform.setKeychainValue('saved_password', password)
+        await platform.removeKeychainValue('saved_password').catch(() => {})
         onAuth(true)
       } else {
         setInfo('Account created! Check your email to confirm, then sign in.')
