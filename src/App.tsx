@@ -148,7 +148,11 @@ export default function App() {
           await withStartupTimeout('check subscription', () => checkSubscription(), 15_000)
           if (s?.sync_enabled) {
             if (isElectron) setTimeout(() => ipc.syncNow(), 1000)
-            else setTimeout(() => syncNow(), 2000)
+            // Android can keep a stale last_pull_at from an older build/session,
+            // which makes incremental sync miss older cloud rows (for example Jobs
+            // created before the cursor). Do one full mobile pull on login/startup
+            // so the local database catches up before the user trusts the counts.
+            else setTimeout(() => syncNow(true), 2000)
           }
         } else {
           setOnboarded(!!s?.onboarding_complete)
@@ -218,7 +222,7 @@ export default function App() {
       if (!isNewAccount) setOnboarded(true)
       await checkSubscription()
       const freshSettings = await ensureMobileCloudSettingsHydrated(await getSettings())
-      if (freshSettings?.sync_enabled && !isElectron) setTimeout(() => syncNow(), 2000)
+      if (freshSettings?.sync_enabled && !isElectron) setTimeout(() => syncNow(true), 2000)
     }} />
   }
 

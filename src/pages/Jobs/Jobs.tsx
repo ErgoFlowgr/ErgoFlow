@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getJobs, getCustomers, upsertJob, deleteJob, type Job, type Customer } from '../../lib/db'
+import { ipc, isElectron } from '../../lib/electron'
 
 type Status = Job['status'] | 'all'
 type Priority = Job['priority']
@@ -139,6 +140,16 @@ export default function Jobs() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    const reloadJobs = () => { void load() }
+    if (isElectron) {
+      ipc.on('sync:complete', reloadJobs)
+      return () => ipc.off('sync:complete', reloadJobs)
+    }
+    window.addEventListener('sync:complete', reloadJobs)
+    return () => window.removeEventListener('sync:complete', reloadJobs)
+  }, [load])
 
   useEffect(() => {
     const up = () => {

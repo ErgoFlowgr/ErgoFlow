@@ -31,6 +31,11 @@ assert(
 )
 
 assert(
+  /setTimeout\(\(\) => syncNow\(true\), 2000\)/.test(app),
+  'Android startup/login sync must force a full pull so a stale last_pull_at cannot hide older cloud Jobs rows'
+)
+
+assert(
   syncMobile.includes('SETTINGS_PUSH_EXCLUDE_COLUMNS'),
   'mobile sync must exclude device-local/runtime/secret settings columns like desktop sync does'
 )
