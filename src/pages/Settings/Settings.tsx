@@ -37,6 +37,7 @@ export default function SettingsPage() {
   const [newCat, setNewCat] = useState('')
   const [newCatColor, setNewCatColor] = useState('#4f6ef7')
   const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'ok' | 'error'>('idle')
+  const [syncError, setSyncError] = useState<string | null>(null)
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null)
   const isDirty = useRef(false)
   const [inputKey, setInputKey] = useState(0)

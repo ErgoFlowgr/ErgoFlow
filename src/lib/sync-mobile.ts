@@ -154,10 +154,10 @@ export async function syncNow(force = false): Promise<boolean> {
   }
 }
 
-async function pull(token: string): Promise<{ remoteWon: Set<string>; ok: boolean }> {
+async function pull(token: string): Promise<{ remoteWon: Set<string>; ok: boolean; reason?: string }> {
   const remoteWon = new Set<string>()
   const config = await getSupabaseConfig()
-  if (!config) return { remoteWon, ok: false }
+  if (!config) return { remoteWon, ok: false, reason: 'missing Supabase config' }
 
   const headers = {
     apikey: config.anonKey,
@@ -172,6 +172,7 @@ async function pull(token: string): Promise<{ remoteWon: Set<string>; ok: boolea
 
   const SAFE_COL = /^[a-z_][a-z0-9_]*$/i
   let anyFailed = false
+  let firstFailure = ''
 
   for (const table of SYNC_TABLES) {
     try {
@@ -181,9 +182,16 @@ async function pull(token: string): Promise<{ remoteWon: Set<string>; ok: boolea
       if (!res.ok) {
         if (res.status === 400 && lastPull) {
           res = await fetch(`${config.url}/rest/v1/${table}?select=*`, { headers })
-          if (!res.ok) { anyFailed = true; continue }
+          if (!res.ok) {
+            const body = await res.text().catch(() => '')
+            anyFailed = true
+            if (!firstFailure) firstFailure = `pull ${table} failed: HTTP ${res.status}${body ? ` ${body.slice(0, 160)}` : ''}`
+            continue
+          }
         } else {
+          const body = await res.text().catch(() => '')
           anyFailed = true
+          if (!firstFailure) firstFailure = `pull ${table} failed: HTTP ${res.status}${body ? ` ${body.slice(0, 160)}` : ''}`
           continue
         }
       }
@@ -194,6 +202,7 @@ async function pull(token: string): Promise<{ remoteWon: Set<string>; ok: boolea
     } catch (e) {
       console.error(`[sync-mobile] pull ${table}:`, e)
       anyFailed = true
+      if (!firstFailure) firstFailure = `pull ${table} failed: ${errorText(e)}`
     }
   }
 
@@ -234,7 +243,7 @@ async function pull(token: string): Promise<{ remoteWon: Set<string>; ok: boolea
     try { await db.run(`DELETE FROM sync_meta WHERE key = 'last_pull_at'`) } catch { /* ignore */ }
   }
 
-  return { remoteWon, ok: !anyFailed }
+  return { remoteWon, ok: !anyFailed, reason: firstFailure }
 }
 
 // Returns set of record IDs (not table:id) where remote was newer and won.
@@ -296,21 +305,21 @@ async function upsertRows(table: string, rows: Record<string, unknown>[], SAFE_C
   return remoteWon
 }
 
-async function push(token: string): Promise<void> {
+async function push(token: string): Promise<{ ok: boolean; reason?: string }> {
   const queue = await db.query(
     `SELECT * FROM sync_queue ORDER BY id ASC LIMIT 50`
   ) as Array<{ id: number; table_name: string; record_id: string; operation: string }>
 
-  if (!queue.length) return
+  if (!queue.length) return { ok: true }
 
   const config = await getSupabaseConfig()
-  if (!config) return
+  if (!config) return { ok: false, reason: 'missing Supabase config' }
 
   function getOwnerIdFromToken(t: string): string | null {
     try { return (JSON.parse(atob(t.split('.')[1])) as { sub?: string }).sub ?? null } catch { return null }
   }
   const ownerId = getOwnerIdFromToken(token)
-  if (!ownerId) return
+  if (!ownerId) return { ok: false, reason: 'token missing owner id' }
 
   const headers = {
     'Content-Type': 'application/json',
@@ -318,6 +327,7 @@ async function push(token: string): Promise<void> {
     Authorization: `Bearer ${token}`,
     Prefer: 'resolution=merge-duplicates',
   }
+  let firstFailure = ''
 
   for (const item of queue) {
     try {
@@ -366,11 +376,17 @@ async function push(token: string): Promise<void> {
         }
         await db.run(`DELETE FROM sync_queue WHERE id = ?`, [item.id])
         await db.run(`UPDATE ${item.table_name} SET synced = 1 WHERE id = ?`, [item.record_id])
+      } else {
+        const body = await res.text().catch(() => '')
+        if (!firstFailure) firstFailure = `push ${item.table_name}/${item.record_id} failed: HTTP ${res.status}${body ? ` ${body.slice(0, 160)}` : ''}`
       }
     } catch (e) {
       console.error(`[sync-mobile] push ${item.table_name}/${item.record_id}:`, e)
+      if (!firstFailure) firstFailure = `push ${item.table_name}/${item.record_id} failed: ${errorText(e)}`
     }
   }
+
+  return { ok: !firstFailure, reason: firstFailure }
 }
 
 export async function syncOnFocus(): Promise<void> {
