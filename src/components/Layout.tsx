@@ -299,9 +299,9 @@ export default function Layout({ children, onSignOut, tier = 'free', subscriptio
 
           {/* Cloud sync status */}
           <div className="flex items-center gap-1.5 text-xs">
-            <span className={`w-2 h-2 rounded-full shrink-0 ${syncEnabled && isOnline ? (syncPulse ? 'bg-brand-500 animate-pulse' : 'bg-brand-500/70') : 'bg-gray-600'}`} />
-            <span className={syncEnabled && isOnline ? 'text-gray-500' : 'text-gray-600'}>
-              {!syncEnabled ? 'Sync ανενεργός' : !isOnline ? 'Sync (offline)' : 'Sync ενεργός'}
+            <span className={`w-2 h-2 rounded-full shrink-0 ${syncError ? 'bg-red-500' : syncEnabled && isOnline ? (syncPulse ? 'bg-brand-500 animate-pulse' : 'bg-brand-500/70') : 'bg-gray-600'}`} />
+            <span className={syncError ? 'text-red-400' : syncEnabled && isOnline ? 'text-gray-500' : 'text-gray-600'}>
+              {syncError ? `Sync σφάλμα: ${syncError}` : !syncEnabled ? 'Sync ανενεργός' : !isOnline ? 'Sync (offline)' : 'Sync ενεργός'}
             </span>
           </div>
 
