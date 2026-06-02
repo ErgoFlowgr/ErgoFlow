@@ -251,8 +251,8 @@ export default function Jobs() {
         </div>
         <div className="flex items-center gap-2">
           <div className="flex items-center bg-surface-700 rounded-xl p-1 gap-1">
-            <button onClick={() => setView('list')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${view === 'list' ? 'bg-surface-500 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`} title="List view"><ListIcon /><span>List</span></button>
-            <button onClick={() => setView('calendar')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${view === 'calendar' ? 'bg-surface-500 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`} title="Calendar view"><CalendarIcon /><span>Calendar</span></button>
+            <button onClick={() => setView('list')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${view === 'list' ? 'bg-surface-500 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`} title={t('jobs.titleListView')}><ListIcon /><span>{t('jobs.viewList')}</span></button>
+            <button onClick={() => setView('calendar')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${view === 'calendar' ? 'bg-surface-500 text-white shadow-sm' : 'text-gray-400 hover:text-white'}`} title={t('jobs.titleCalendarView')}><CalendarIcon /><span>{t('jobs.viewCalendar')}</span></button>
           </div>
           <button
             onClick={openNew}
@@ -293,10 +293,10 @@ export default function Jobs() {
 
       {/* Calendar view */}
       {view === 'calendar' && (
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 flex flex-col sm:flex-row overflow-hidden">
 
           {/* ── Mini calendar (left panel) ── */}
-          <div className="hidden sm:block w-72 shrink-0 p-4 border-r border-surface-600 overflow-auto select-none">
+          <div className="block w-full sm:w-72 shrink-0 p-4 border-b sm:border-b-0 sm:border-r border-surface-600 overflow-auto select-none">
             {/* Month nav */}
             <div className="flex items-center justify-between mb-2">
               <button onClick={() => setCalMonth(new Date(calYear, calMonthNum - 1, 1))} className="p-1 text-gray-400 hover:text-white hover:bg-surface-700 rounded-lg transition-colors"><ChevLeft /></button>
@@ -328,6 +328,7 @@ export default function Jobs() {
                     `}
                     onMouseDown={() => { setDragStart(dateStr); setDragEnd(dateStr); setIsDragging(true) }}
                     onMouseEnter={() => { if (isDragging) setDragEnd(dateStr) }}
+                    onClick={() => { setDragStart(dateStr); setDragEnd(dateStr); setIsDragging(false) }}
                   >
                     <div className={`w-8 h-8 flex items-center justify-center rounded-full text-xs font-medium transition-colors
                       ${isToday ? 'bg-brand-500 text-white' : ''}
