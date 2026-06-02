@@ -61,11 +61,16 @@ function isSyncEnabled(): boolean {
   } catch { return false }
 }
 
+function emitSyncError(win: BrowserWindow | null, reason: string) {
+  slog('[SYNC] Error: ' + reason)
+  win?.webContents.send('sync:error', { message: reason, reason })
+}
+
 export function setupSyncWorker(win: BrowserWindow | null) {
   if (syncWorkerRunning) return
   syncWorkerRunning = true
 
-  sync(win) // run immediately on startup
+  void sync(win) // run immediately on startup
   backfillVapiCalls(win) // pull VAPI call history on startup
 
   // .unref() so intervals don't keep the process alive after the window closes
@@ -75,11 +80,11 @@ export function setupSyncWorker(win: BrowserWindow | null) {
 
 // Called from main.ts when the window regains focus
 export function triggerPull(win: BrowserWindow | null) {
-  pullOnly(win)
+  void pullOnly(win)
 }
 
-export function triggerSync(win: BrowserWindow | null) {
-  sync(win)
+export function triggerSync(win: BrowserWindow | null): Promise<boolean> {
+  return sync(win)
 }
 
 function getOwnerIdFromToken(token: string): string | null {
@@ -120,11 +125,17 @@ async function refreshAccessToken(): Promise<string | null> {
 
 let syncInProgress = false
 
-async function sync(win: BrowserWindow | null) {
-  if (!isSyncEnabled()) return
-  if (syncInProgress) return
+async function sync(win: BrowserWindow | null): Promise<boolean> {
+  if (!isSyncEnabled()) {
+    emitSyncError(win, 'sync disabled')
+    return false
+  }
+  if (syncInProgress) {
+    emitSyncError(win, 'sync already running')
+    return false
+  }
   syncInProgress = true
-  try { await doSync(win) } finally { syncInProgress = false }
+  try { return await doSync(win) } finally { syncInProgress = false }
 }
 
 async function pushOnly(win: BrowserWindow | null) {
@@ -199,7 +210,7 @@ async function pullOnly(win: BrowserWindow | null) {
   }
 }
 
-async function doSync(win: BrowserWindow | null) {
+async function doSync(win: BrowserWindow | null): Promise<boolean> {
   const supabaseUrl = SUPABASE_URL
   const supabaseKey = SUPABASE_ANON_KEY
   // Try in-memory session first, fall back to keychain
