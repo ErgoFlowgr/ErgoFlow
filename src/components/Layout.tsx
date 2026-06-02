@@ -155,6 +155,7 @@ export default function Layout({ children, onSignOut, tier = 'free', subscriptio
   const [hiddenTabs, setHiddenTabs] = useState<string[]>([])
   const [syncEnabled, setSyncEnabled] = useState(false)
   const [offlineDaysLeft, setOfflineDaysLeft] = useState<number | null>(null)
+  const [syncError, setSyncError] = useState<string | null>(null)
 
   const loadHiddenTabs = () => {
     getSettings().then(s => {
@@ -180,14 +181,30 @@ export default function Layout({ children, onSignOut, tier = 'free', subscriptio
     window.addEventListener('offline', onOffline)
     window.addEventListener('settings:changed', loadHiddenTabs)
 
-    const onSync = () => { setSyncPulse(true); setTimeout(() => setSyncPulse(false), 1000) }
+    const onSync = () => {
+      setSyncPulse(true)
+      setSyncError(null)
+      setTimeout(() => setSyncPulse(false), 1000)
+    }
+    const onSyncError = (event?: Event) => {
+      const detail = event instanceof CustomEvent ? event.detail as { reason?: string } : undefined
+      setSyncError(detail?.reason || 'sync failed')
+    }
     if (isElectron) ipc.on('sync:complete', onSync)
+    else {
+      window.addEventListener('sync:complete', onSync)
+      window.addEventListener('sync:error', onSyncError)
+    }
 
     return () => {
       window.removeEventListener('online',  onOnline)
       window.removeEventListener('offline', onOffline)
       window.removeEventListener('settings:changed', loadHiddenTabs)
       if (isElectron) ipc.off('sync:complete', onSync)
+      else {
+        window.removeEventListener('sync:complete', onSync)
+        window.removeEventListener('sync:error', onSyncError)
+      }
     }
   }, [])
 

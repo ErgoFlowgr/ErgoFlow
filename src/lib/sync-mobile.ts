@@ -20,6 +20,10 @@ const ALLOWED_SYNC_TABLES = new Set(SYNC_TABLES)
 
 let syncInProgress = false
 
+function emitSyncError(reason: string): void {
+  window.dispatchEvent(new CustomEvent('sync:error', { detail: { reason } }))
+}
+
 const SETTINGS_PUSH_EXCLUDE_COLUMNS = new Set([
   'sync_enabled',
   'minimize_to_tray',
@@ -66,28 +70,38 @@ async function ensureFreshToken(): Promise<string | null> {
 }
 
 export async function syncNow(force = false): Promise<boolean> {
-  if (syncInProgress) return false
+  if (syncInProgress) { emitSyncError('sync already running'); return false }
   try {
     const row = await db.get(`SELECT sync_enabled FROM settings WHERE id = ?`, ['main']) as { sync_enabled?: number } | undefined
-    if (!row?.sync_enabled) return false
-  } catch { return false }
+    if (!row?.sync_enabled) { emitSyncError('sync disabled'); return false }
+  } catch { emitSyncError('settings unavailable'); return false }
   syncInProgress = true
   try {
     const token = await ensureFreshToken()
-    if (!token) { console.warn('[sync-mobile] no valid token, skipping sync'); return false }
+    if (!token) { console.warn('[sync-mobile] no valid token, skipping sync'); emitSyncError('no valid token'); return false }
     if (force) {
       try { await db.run(`DELETE FROM sync_meta WHERE key = 'last_pull_at'`, []) } catch { /* ignore */ }
     }
 
     // 1. Pull first — remote wins only if newer
     let remoteWon = new Set<string>()
+    let syncFailed = false
     try {
-      remoteWon = await pull(token)
+      const pulled = await pull(token)
+      remoteWon = pulled.remoteWon
+      syncFailed = syncFailed || !pulled.ok
     } catch (e) {
       // Retry once — Android WebView first-request can fail on startup
       console.warn('[sync-mobile] pull failed, retrying in 1.5s:', e)
       await new Promise(r => setTimeout(r, 1500))
-      try { remoteWon = await pull(token) } catch (e2) { console.error('[sync-mobile] pull retry failed:', e2) }
+      try {
+        const pulled = await pull(token)
+        remoteWon = pulled.remoteWon
+        syncFailed = syncFailed || !pulled.ok
+      } catch (e2) {
+        console.error('[sync-mobile] pull retry failed:', e2)
+        syncFailed = true
+      }
     }
 
     // 2. Drop sync_queue upsert entries for records remote just won
@@ -104,22 +118,28 @@ export async function syncNow(force = false): Promise<boolean> {
     }
 
     // 3. Push local changes that are genuinely newer, then propagate deletes
-    try { await push(token) } catch (e) { console.error('[sync-mobile] push error:', e) }
+    try { await push(token) } catch (e) { console.error('[sync-mobile] push error:', e); syncFailed = true }
+
+    if (syncFailed) {
+      emitSyncError('sync completed with errors')
+      return false
+    }
 
     window.dispatchEvent(new CustomEvent('sync:complete'))
     return true
   } catch (e) {
     console.error('[sync-mobile] error:', e)
+    emitSyncError(e instanceof Error ? e.message : 'sync failed')
     return false
   } finally {
     syncInProgress = false
   }
 }
 
-async function pull(token: string): Promise<Set<string>> {
+async function pull(token: string): Promise<{ remoteWon: Set<string>; ok: boolean }> {
   const remoteWon = new Set<string>()
   const config = await getSupabaseConfig()
-  if (!config) return remoteWon
+  if (!config) return { remoteWon, ok: false }
 
   const headers = {
     apikey: config.anonKey,
@@ -196,7 +216,7 @@ async function pull(token: string): Promise<Set<string>> {
     try { await db.run(`DELETE FROM sync_meta WHERE key = 'last_pull_at'`) } catch { /* ignore */ }
   }
 
-  return remoteWon
+  return { remoteWon, ok: !anyFailed }
 }
 
 // Returns set of record IDs (not table:id) where remote was newer and won.
