@@ -89,7 +89,13 @@ export default function SettingsPage() {
       }
       ipc.on('sync:complete', onComplete)
       ipc.on('sync:error', onError)
-      ipc.syncNow()
+      const ok = await ipc.syncNow()
+      if (!ok) {
+        cleanup()
+        setSyncStatus('error')
+        setSyncError(prev => prev || 'sync failed')
+        setTimeout(() => setSyncStatus('idle'), 3000)
+      }
     } else {
       let mobileSyncReason = ''
       const onError = (event: Event) => {
@@ -246,12 +252,14 @@ export default function SettingsPage() {
     const enabled = e.target.checked ? 1 : 0
     await saveSettings({ sync_enabled: enabled })
     update({ sync_enabled: enabled })
+    setSyncError(null)
     window.dispatchEvent(new Event('settings:changed'))
     if (enabled) {
       setSyncStatus('syncing')
       try {
+        let ok = true
         if (isElectron) {
-          await ipc.syncEnable()
+          ok = await ipc.syncEnable()
         } else {
           // On Android: if the device has no local company data (fresh install), let
           // Supabase win by removing settings from the push queue before the pull.
@@ -261,17 +269,30 @@ export default function SettingsPage() {
           if (!hasLocalData) {
             try { await db.run('DELETE FROM sync_queue WHERE table_name = ? AND record_id = ?', ['settings', 'main']) } catch { /* ignore */ }
           }
-          await syncNow(true)
-          // Re-save sync_enabled=1 after pull (Supabase may have had 0), then push
-          await saveSettings({ sync_enabled: 1 })
-          update({ sync_enabled: 1 })
-          await syncNow()
+          let mobileSyncReason = ''
+          const onError = (event: Event) => {
+            const detail = event instanceof CustomEvent ? event.detail as { reason?: string } : undefined
+            mobileSyncReason = detail?.reason || 'sync failed'
+            setSyncError(mobileSyncReason)
+          }
+          window.addEventListener('sync:error', onError)
+          try {
+            ok = await syncNow(true)
+            // Re-save sync_enabled=1 after pull (Supabase may have had 0), then push
+            await saveSettings({ sync_enabled: 1 })
+            update({ sync_enabled: 1 })
+            ok = (await syncNow()) && ok
+          } finally {
+            window.removeEventListener('sync:error', onError)
+          }
+          if (!ok && !mobileSyncReason) setSyncError('sync failed')
         }
         await loadLastSync()
-        setSyncStatus('ok')
+        setSyncStatus(ok ? 'ok' : 'error')
         setTimeout(() => setSyncStatus('idle'), 3000)
-      } catch {
+      } catch (e) {
         setSyncStatus('error')
+        setSyncError(e instanceof Error && e.message ? e.message : 'sync failed')
         setTimeout(() => setSyncStatus('idle'), 3000)
       }
     }

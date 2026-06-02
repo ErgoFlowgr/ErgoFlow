@@ -229,13 +229,21 @@ async function doSync(win: BrowserWindow | null): Promise<boolean> {
 
   // Need user's session token to pass RLS
   if (!supabaseUrl || !supabaseKey || !accessToken) {
-    slog('[SYNC] Bailing — missing credentials')
-    return
+    const missing = [
+      !supabaseUrl ? 'Supabase URL' : '',
+      !supabaseKey ? 'Supabase anon key' : '',
+      !accessToken ? 'login token' : '',
+    ].filter(Boolean).join(', ')
+    emitSyncError(win, `missing credentials: ${missing}`)
+    return false
   }
 
   const ownerId = getOwnerIdFromToken(accessToken)
   slog('[SYNC] Owner ID: ' + (ownerId ? 'OK' : 'MISSING'))
-  if (!ownerId) return
+  if (!ownerId) {
+    emitSyncError(win, 'token missing owner id')
+    return false
+  }
 
   try {
     const db = getDb()
@@ -263,9 +271,12 @@ async function doSync(win: BrowserWindow | null): Promise<boolean> {
 
     win?.webContents.send('sync:complete', { timestamp: new Date().toISOString() })
     slog('[SYNC] Done')
+    return true
   } catch (err) {
+    const reason = err instanceof Error && err.message ? err.message : String(err)
     console.error('Sync error:', err)
-    win?.webContents.send('sync:error', { message: String(err) })
+    emitSyncError(win, reason || 'sync failed')
+    return false
   }
 }
 

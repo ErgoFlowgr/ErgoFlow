@@ -292,10 +292,10 @@ ipcMain.on('settings:minimizeToTray', (_e, value: boolean) => {
   minimizeToTray = value
 })
 
-ipcMain.handle('sync:now', () => { triggerSync(mainWindow) })
+ipcMain.handle('sync:now', () => triggerSync(mainWindow))
 ipcMain.handle('sync:enable', () => {
   if (!isSyncWorkerRunning()) setupSyncWorker(mainWindow)
-  triggerSync(mainWindow)
+  return triggerSync(mainWindow)
 })
 
 // ── IPC: Notifications ────────────────────────────────────────────────────
