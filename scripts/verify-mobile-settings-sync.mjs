@@ -38,6 +38,16 @@ assert(
 )
 
 assert(
+  app.includes('clearRestoredMobileAuthOnce') && app.includes('mobile_auth_restore_guard_v1'),
+  'Mobile startup must clear one-time restored auth tokens so fresh installs open on Sign In / Create Account'
+)
+
+assert(
+  app.includes("withStartupTimeout('clear restored mobile auth'") && app.indexOf('clear restored mobile auth') < app.indexOf('load saved session'),
+  'Mobile restored-auth cleanup must run before loading any saved session token'
+)
+
+assert(
   androidManifest.includes('android:allowBackup="false"'),
   'Android app backup must be disabled so reinstall/fresh tester installs do not restore old auth Preferences'
 )

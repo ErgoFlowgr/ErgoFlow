@@ -56,6 +56,23 @@ async function ensureMobileCloudSettingsHydrated(settings: Settings | null | und
     return settings
   }
 }
+
+async function clearRestoredMobileAuthOnce(): Promise<void> {
+  if (isElectron || !platform.isMobile) return
+
+  const guardKey = 'mobile_auth_restore_guard_v1'
+  const alreadyChecked = await platform.getKeychainValue(guardKey)
+  if (alreadyChecked) return
+
+  // Android may restore Capacitor Preferences from device backup before the app
+  // starts. That can resurrect an old access token after uninstall/reinstall and
+  // silently open the app in the wrong account. Force one clean login on mobile;
+  // after the user explicitly signs in, normal session persistence works again.
+  await platform.clearToken().catch(() => {})
+  await platform.removeKeychainValue('supabase_refresh_token').catch(() => {})
+  await platform.removeKeychainValue('saved_password').catch(() => {})
+  await platform.setKeychainValue(guardKey, '1').catch(() => {})
+}
 import Layout from './components/Layout'
 import Auth from './pages/Auth/Auth'
 import Onboarding from './pages/Onboarding/Onboarding'
@@ -134,6 +151,7 @@ export default function App() {
   useEffect(() => {
     const init = async () => {
       try {
+        await withStartupTimeout('clear restored mobile auth', () => clearRestoredMobileAuthOnce())
         const token = await withStartupTimeout('load saved session', () => platform.getToken())
         if (token) {
           const userId = token.includes('.') ? extractUserIdFromJwt(token) : token
