@@ -24,6 +24,12 @@ function emitSyncError(reason: string): void {
   window.dispatchEvent(new CustomEvent('sync:error', { detail: { reason } }))
 }
 
+function errorText(e: unknown): string {
+  if (e instanceof Error && e.message) return e.message
+  if (typeof e === 'string' && e) return e
+  return 'unknown error'
+}
+
 const SETTINGS_PUSH_EXCLUDE_COLUMNS = new Set([
   'sync_enabled',
   'minimize_to_tray',
@@ -86,10 +92,12 @@ export async function syncNow(force = false): Promise<boolean> {
     // 1. Pull first — remote wins only if newer
     let remoteWon = new Set<string>()
     let syncFailed = false
+    let syncErrorReason = ''
     try {
       const pulled = await pull(token)
       remoteWon = pulled.remoteWon
       syncFailed = syncFailed || !pulled.ok
+      if (!pulled.ok) syncErrorReason = pulled.reason || syncErrorReason
     } catch (e) {
       // Retry once — Android WebView first-request can fail on startup
       console.warn('[sync-mobile] pull failed, retrying in 1.5s:', e)
@@ -98,9 +106,11 @@ export async function syncNow(force = false): Promise<boolean> {
         const pulled = await pull(token)
         remoteWon = pulled.remoteWon
         syncFailed = syncFailed || !pulled.ok
+        if (!pulled.ok) syncErrorReason = pulled.reason || syncErrorReason
       } catch (e2) {
         console.error('[sync-mobile] pull retry failed:', e2)
         syncFailed = true
+        syncErrorReason = `pull failed: ${errorText(e2)}`
       }
     }
 
@@ -118,10 +128,18 @@ export async function syncNow(force = false): Promise<boolean> {
     }
 
     // 3. Push local changes that are genuinely newer, then propagate deletes
-    try { await push(token) } catch (e) { console.error('[sync-mobile] push error:', e); syncFailed = true }
+    try {
+      const pushed = await push(token)
+      syncFailed = syncFailed || !pushed.ok
+      if (!pushed.ok) syncErrorReason = pushed.reason || syncErrorReason
+    } catch (e) {
+      console.error('[sync-mobile] push error:', e)
+      syncFailed = true
+      syncErrorReason = `push failed: ${errorText(e)}`
+    }
 
     if (syncFailed) {
-      emitSyncError('sync completed with errors')
+      emitSyncError(syncErrorReason || 'sync completed with errors')
       return false
     }
 
