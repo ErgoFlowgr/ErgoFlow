@@ -19,6 +19,13 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          return id.includes('node_modules') ? 'vendor' : undefined
+        },
+      },
+    },
   },
   server: {
     host: '127.0.0.1',

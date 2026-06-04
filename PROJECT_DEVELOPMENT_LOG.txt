@@ -148,7 +148,14 @@ Short summary:
 - Renamed the PostCSS config from postcss.config.js to postcss.config.mjs so Vite no longer reparses it with a module-type warning.
 - Left dev-only Electron/electron-builder audit items unresolved because npm reports the available fix requires breaking major upgrades and explicit approval.
 
-Current standing notes as of 2026-06-04 16:04:00 GTBST
+2026-06-04 17:14 - Pre-launch safe hardening follow-up
+Short summary:
+- Added a full renderer TypeScript check with npx tsc --noEmit and fixed the Settings sync-error IPC handler type mismatch without changing runtime behavior.
+- Split Vite production output into app and vendor chunks so the launch build no longer reports the >500 kB chunk warning.
+- Re-verified renderer build, Electron TypeScript build, ESLint security scan, renderer TypeScript check, and production npm audit.
+- Full dev audit still requires approval because the remaining fixes are breaking Electron/electron-builder toolchain upgrades.
+
+Current standing notes as of 2026-06-04 17:14:00 GTBST
 Short summary:
 - ErgoFlow source project is known and organized at D:\Projects\ErgoFlow\Claude\crm-app.
 - Current app package version in package.json is 0.8.12.
