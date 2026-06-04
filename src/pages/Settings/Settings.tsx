@@ -80,10 +80,13 @@ export default function SettingsPage() {
         loadLastSync()
         setTimeout(() => setSyncStatus('idle'), 3000)
       }
-      const onError = (payload?: { message?: string; reason?: string } | string) => {
+      const onError = (payload?: unknown) => {
         cleanup()
         setSyncStatus('error')
-        const reason = typeof payload === 'string' ? payload : (payload?.message || payload?.reason)
+        const detail = typeof payload === 'object' && payload !== null
+          ? payload as { message?: string; reason?: string }
+          : undefined
+        const reason = typeof payload === 'string' ? payload : (detail?.message || detail?.reason)
         setSyncError(reason || 'sync failed')
         setTimeout(() => setSyncStatus('idle'), 3000)
       }
