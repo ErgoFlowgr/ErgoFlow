@@ -140,7 +140,15 @@ Short summary:
 - Added a CALLER-ID HARD RULE to the assistant prompt so {{customer.number}} is treated as the caller phone number and the assistant must not ask for it again.
 - Found the deployed vapi-tools edge function still fails when VAPI sends tool-call arguments as an object instead of a JSON string, returning "No phone number provided." Local code was patched to accept both shapes, but deployment is blocked until Supabase access token/login is available.
 
-Current standing notes as of 2026-05-26 17:09:09 GTBST
+2026-06-04 16:04 - Pre-launch safe hardening pass
+Short summary:
+- Ran safe pre-launch checks without committing, pushing, releasing, uploading, or changing product behavior.
+- Verified renderer build, Electron TypeScript build, ESLint security scan, and production npm audit.
+- Cleared production npm audit vulnerabilities by refreshing installed React Router packages to the already-locked 7.16.0 via npm audit fix.
+- Renamed the PostCSS config from postcss.config.js to postcss.config.mjs so Vite no longer reparses it with a module-type warning.
+- Left dev-only Electron/electron-builder audit items unresolved because npm reports the available fix requires breaking major upgrades and explicit approval.
+
+Current standing notes as of 2026-06-04 16:04:00 GTBST
 Short summary:
 - ErgoFlow source project is known and organized at D:\Projects\ErgoFlow\Claude\crm-app.
 - Current app package version in package.json is 0.8.12.
