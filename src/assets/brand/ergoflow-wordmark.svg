@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="160" viewBox="0 0 620 160" role="img" aria-labelledby="title desc">
+  <title id="title">ErgoFlow wordmark</title>
+  <desc id="desc">General ErgoFlow wordmark with a subtle flow line for brand-wide use.</desc>
+  <defs>
+    <linearGradient id="ergoflow-cyan" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#37D9C8"/>
+      <stop offset="1" stop-color="#12A7D8"/>
+    </linearGradient>
+  </defs>
+  <text x="18" y="82" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="76" font-weight="850" letter-spacing="-3">
+    <tspan fill="#082E57">Ergo</tspan><tspan fill="#12A7D8">Flow</tspan>
+  </text>
+  <path d="M24 109 C91 127, 193 126, 270 108 S404 90, 502 110" fill="none" stroke="url(#ergoflow-cyan)" stroke-width="7" stroke-linecap="round"/>
+</svg>
