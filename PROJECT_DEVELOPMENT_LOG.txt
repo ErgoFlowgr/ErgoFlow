@@ -155,6 +155,12 @@ Short summary:
 - Re-verified renderer build, Electron TypeScript build, ESLint security scan, renderer TypeScript check, and production npm audit.
 - Full dev audit still requires approval because the remaining fixes are breaking Electron/electron-builder toolchain upgrades.
 
+2026-06-05 15:46 - Website logo assets
+Short summary:
+- Added a clean vector website logo for ErgoFlow using the established navy/gold tradesman branding.
+- Added a square icon version suitable for favicon, app tile, social avatar, and compact mobile header use.
+- Added a small local preview page to check the primary logo, website header sizing, dark-header contrast, and square icon.
+
 Current standing notes as of 2026-06-04 17:14:00 GTBST
 Short summary:
 - ErgoFlow source project is known and organized at D:\Projects\ErgoFlow\Claude\crm-app.

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ErgoFlow Logo Preview</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, sans-serif; background: #f5f7fb; color: #082E57; }
+    .wrap { max-width: 1040px; margin: 48px auto; padding: 0 24px; }
+    .card { background: white; border: 1px solid #e6edf5; border-radius: 24px; padding: 32px; box-shadow: 0 18px 55px rgba(6,31,61,.10); margin-bottom: 24px; }
+    .nav { display: flex; align-items: center; justify-content: space-between; height: 78px; padding: 0 28px; background: white; border-radius: 18px; border: 1px solid #e6edf5; box-shadow: 0 12px 35px rgba(6,31,61,.08); }
+    .nav img { height: 52px; width: auto; }
+    .links { display: flex; gap: 22px; font-weight: 700; color: #0B3A66; }
+    .main-logo { width: min(760px, 100%); height: auto; }
+    .dark { background: #061F3D; }
+    .dark .links { color: #fff; opacity: .88; }
+    .dark .nav { background: #082E57; border-color: rgba(255,255,255,.12); }
+    .icon-row { display: flex; gap: 24px; align-items: center; flex-wrap: wrap; }
+    .icon-row img { width: 120px; height: 120px; }
+    h1 { font-size: 22px; margin: 0 0 18px; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="card">
+      <h1>Primary logo</h1>
+      <img class="main-logo" src="ergoflow-website-logo.svg" alt="ErgoFlow website logo" />
+    </section>
+    <section class="card">
+      <h1>Website header test</h1>
+      <div class="nav">
+        <img src="ergoflow-website-logo.svg" alt="ErgoFlow" />
+        <div class="links"><span>Features</span><span>Pricing</span><span>Contact</span></div>
+      </div>
+    </section>
+    <section class="card dark">
+      <h1 style="color:white">Dark header test</h1>
+      <div class="nav">
+        <img src="ergoflow-website-logo.svg" alt="ErgoFlow" />
+        <div class="links"><span>Features</span><span>Pricing</span><span>Contact</span></div>
+      </div>
+    </section>
+    <section class="card">
+      <h1>Icon / favicon version</h1>
+      <div class="icon-row">
+        <img src="ergoflow-icon.svg" alt="ErgoFlow icon" />
+        <p>Square icon for favicon, app tile, social avatar, and mobile shortcut.</p>
+      </div>
+    </section>
+  </main>
+</body>
+</html>
