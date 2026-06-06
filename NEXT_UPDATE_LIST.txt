@@ -1,0 +1,17 @@
+ErgoFlow next update list
+Generated/updated: 2026-06-06 15:32:51 GTBST
+Project: D:\Projects\ErgoFlow\Claude\crm-app
+Scope: Small practical fixes to include in the next desktop app update.
+
+2026-06-06 15:32 - License/offline wording cleanup
+- Remove or update the old user-facing "license verifies every 30 days / go online" message in src/pages/Paywall/VerificationRequired.tsx.
+- Correct stale top-of-file comments in src/lib/license.ts that still describe the old 30-day offline verification/blocking model.
+- Align wording with the current behavior: free users remain free/active offline; paid tiers keep cached paid access for 7 days, then degrade silently to free until online verification succeeds again.
+- Check whether VerificationRequired is still needed in normal app flow or only for manual forceVerifyLicense/debug recovery.
+- Verify after change with TypeScript/build checks.
+
+2026-06-06 15:32 - Make "show amounts" button more noticeable
+- Improve the visibility of the button/toggle that reveals hidden money amounts.
+- Make it easier to spot at a glance without making the screen noisy: stronger contrast, clearer label/icon, hover/focus state, and possibly a small eye/amount indicator.
+- Check all places where amounts are hidden/shown so the behavior and styling are consistent.
+- Verify visually in the desktop app after the change.
