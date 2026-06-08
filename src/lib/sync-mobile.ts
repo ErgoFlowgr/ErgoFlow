@@ -18,6 +18,15 @@ const SYNC_TABLES = [
 
 const ALLOWED_SYNC_TABLES = new Set(SYNC_TABLES)
 
+const PARENT_FK_BY_TABLE: Record<string, Array<{ column: string; parentTable: string }>> = {
+  calls: [{ column: 'customer_id', parentTable: 'customers' }],
+  jobs: [{ column: 'customer_id', parentTable: 'customers' }],
+  invoices: [{ column: 'customer_id', parentTable: 'customers' }],
+  offers: [{ column: 'customer_id', parentTable: 'customers' }],
+  invoice_items: [{ column: 'invoice_id', parentTable: 'invoices' }],
+  offer_items: [{ column: 'offer_id', parentTable: 'offers' }],
+}
+
 let syncInProgress = false
 
 function emitSyncError(reason: string): void {
@@ -247,6 +256,24 @@ async function pull(token: string): Promise<{ remoteWon: Set<string>; ok: boolea
 }
 
 // Returns set of record IDs (not table:id) where remote was newer and won.
+async function hasMissingParent(table: string, row: Record<string, unknown>, localCols: Set<string>): Promise<boolean> {
+  const parentRefs = PARENT_FK_BY_TABLE[table]
+  if (!parentRefs?.length) return false
+
+  for (const ref of parentRefs) {
+    if (!localCols.has(ref.column)) continue
+    const parentId = row[ref.column]
+    if (parentId === null || parentId === undefined || parentId === '') continue
+    const parentRow = await db.get(`SELECT id FROM ${ref.parentTable} WHERE id = ?`, [String(parentId)]) as { id: string } | undefined
+    if (!parentRow) {
+      console.warn(`[sync-mobile] skip ${table}/${String(row['id'] ?? 'unknown')}: missing parent ${ref.parentTable}/${String(parentId)}`)
+      return true
+    }
+  }
+
+  return false
+}
+
 async function upsertRows(table: string, rows: Record<string, unknown>[], SAFE_COL: RegExp): Promise<Set<string>> {
   const remoteWon = new Set<string>()
   if (!rows.length) return remoteWon
@@ -266,16 +293,18 @@ async function upsertRows(table: string, rows: Record<string, unknown>[], SAFE_C
     // Never re-insert a record the user has deleted locally
     if (rowId && pendingDeletes.has(rowId)) continue
 
+    let localRow: { updated_at: string } | undefined
     // Timestamp-based conflict resolution for non-settings tables
     if (table !== 'settings' && rowId && row['updated_at'] && localCols.has('updated_at')) {
-      const localRow = await db.get(
+      localRow = await db.get(
         `SELECT updated_at FROM ${table} WHERE id = ?`, [rowId]
       ) as { updated_at: string } | undefined
       if (localRow?.updated_at && localRow.updated_at >= (row['updated_at'] as string)) {
         continue // Local is same or newer — keep local, discard remote
       }
-      if (localRow) remoteWon.add(rowId)
     }
+
+    if (await hasMissingParent(table, row, localCols)) continue
 
     // sync_enabled is device-local — never let remote overwrite it
     const cols = Object.keys(row).filter(c =>
