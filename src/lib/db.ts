@@ -427,6 +427,7 @@ export interface InvoiceItem {
   unit_price: number
   total: number
   sort_order: number
+  updated_at?: string
 }
 
 export async function getInvoices(status?: string): Promise<Invoice[]> {
@@ -497,8 +498,8 @@ export async function upsertInvoice(inv: Partial<Invoice> & { number: string }, 
     const item = items[i]
     const itemId = item.id ?? uuid()
     await db.run(
-      `INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, total, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO invoice_items (id, invoice_id, description, quantity, unit_price, total, sort_order, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), 0)`,
       [itemId, id, item.description, item.quantity, item.unit_price, item.total, i]
     )
     await queueSync('invoice_items', itemId, 'upsert')
@@ -669,6 +670,7 @@ export interface OfferItem {
   unit_price: number
   total: number
   sort_order: number
+  updated_at?: string
 }
 
 export async function getOffersByCustomer(customerId: string): Promise<Offer[]> {
@@ -731,8 +733,8 @@ export async function upsertOffer(off: Partial<Offer> & { number: string }, item
     const item = items[i]
     const itemId = item.id ?? uuid()
     await db.run(
-      `INSERT INTO offer_items (id, offer_id, description, quantity, unit_price, total, sort_order)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO offer_items (id, offer_id, description, quantity, unit_price, total, sort_order, updated_at, synced)
+       VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'), 0)`,
       [itemId, id, item.description, item.quantity, item.unit_price, item.total, i]
     )
     await queueSync('offer_items', itemId, 'upsert')

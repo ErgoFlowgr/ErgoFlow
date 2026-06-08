@@ -267,7 +267,7 @@ async function upsertRows(table: string, rows: Record<string, unknown>[], SAFE_C
     if (rowId && pendingDeletes.has(rowId)) continue
 
     // Timestamp-based conflict resolution for non-settings tables
-    if (table !== 'settings' && rowId && row['updated_at']) {
+    if (table !== 'settings' && rowId && row['updated_at'] && localCols.has('updated_at')) {
       const localRow = await db.get(
         `SELECT updated_at FROM ${table} WHERE id = ?`, [rowId]
       ) as { updated_at: string } | undefined

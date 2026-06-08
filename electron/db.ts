@@ -185,7 +185,9 @@ function runMigrations() {
       quantity REAL DEFAULT 1,
       unit_price REAL DEFAULT 0,
       total REAL DEFAULT 0,
-      sort_order INTEGER DEFAULT 0
+      sort_order INTEGER DEFAULT 0,
+      updated_at TEXT DEFAULT (datetime('now')),
+      synced INTEGER DEFAULT 0
     );
 
     CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
@@ -226,6 +228,7 @@ function runMigrations() {
       unit_price REAL DEFAULT 0,
       total REAL DEFAULT 0,
       sort_order INTEGER DEFAULT 0,
+      updated_at TEXT DEFAULT (datetime('now')),
       synced INTEGER DEFAULT 0
     );
 
@@ -279,7 +282,9 @@ function runMigrations() {
   tryAlter(`ALTER TABLE settings ADD COLUMN allow_web_search INTEGER DEFAULT 0`)
   tryAlter(`ALTER TABLE settings ADD COLUMN brave_search_key TEXT`)
   tryAlter(`ALTER TABLE settings ADD COLUMN owner_last_name TEXT`)
+  tryAlter(`ALTER TABLE invoice_items ADD COLUMN updated_at TEXT`)
   tryAlter(`ALTER TABLE invoice_items ADD COLUMN synced INTEGER DEFAULT 0`)
+  tryAlter(`ALTER TABLE offer_items ADD COLUMN updated_at TEXT`)
   tryAlter(`ALTER TABLE jobs ADD COLUMN offer_id TEXT`)
   tryAlter(`ALTER TABLE jobs ADD COLUMN invoice_id TEXT`)
   tryAlter(`ALTER TABLE settings ADD COLUMN hidden_tabs TEXT`)
@@ -310,6 +315,11 @@ function runMigrations() {
   // AI trial tracking (cached from Supabase)
   tryAlter(`ALTER TABLE settings ADD COLUMN ai_trial_start TEXT`)
   tryAlter(`ALTER TABLE settings ADD COLUMN ai_trial_used INTEGER DEFAULT 0`)
+
+  // Backfill timestamp columns added to existing child tables. SQLite cannot
+  // reliably ADD COLUMN with datetime('now') defaults, so add nullable then fill.
+  try { db.prepare(`UPDATE invoice_items SET updated_at = datetime('now') WHERE updated_at IS NULL`).run() } catch { /* ignore */ }
+  try { db.prepare(`UPDATE offer_items SET updated_at = datetime('now') WHERE updated_at IS NULL`).run() } catch { /* ignore */ }
 
   // Deduplicate sync_queue (keep newest per table+record) and add unique index
   // This fixes a bug where the same record was queued many times, causing sync hammering

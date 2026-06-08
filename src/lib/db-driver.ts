@@ -209,7 +209,9 @@ CREATE TABLE IF NOT EXISTS invoice_items (
   quantity REAL DEFAULT 1,
   unit_price REAL DEFAULT 0,
   total REAL DEFAULT 0,
-  sort_order INTEGER DEFAULT 0
+  sort_order INTEGER DEFAULT 0,
+  updated_at TEXT DEFAULT (datetime('now')),
+  synced INTEGER DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS offers (
@@ -242,6 +244,7 @@ CREATE TABLE IF NOT EXISTS offer_items (
   unit_price REAL DEFAULT 0,
   total REAL DEFAULT 0,
   sort_order INTEGER DEFAULT 0,
+  updated_at TEXT DEFAULT (datetime('now')),
   synced INTEGER DEFAULT 0
 );
 
@@ -304,7 +307,9 @@ async function runMigrations(conn: any): Promise<void> {
   await tryAlter(`ALTER TABLE settings ADD COLUMN allow_web_search INTEGER DEFAULT 0`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN brave_search_key TEXT`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN owner_last_name TEXT`)
+  await tryAlter(`ALTER TABLE invoice_items ADD COLUMN updated_at TEXT`)
   await tryAlter(`ALTER TABLE invoice_items ADD COLUMN synced INTEGER DEFAULT 0`)
+  await tryAlter(`ALTER TABLE offer_items ADD COLUMN updated_at TEXT`)
   await tryAlter(`ALTER TABLE jobs ADD COLUMN offer_id TEXT`)
   await tryAlter(`ALTER TABLE jobs ADD COLUMN invoice_id TEXT`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN hidden_tabs TEXT`)
@@ -327,6 +332,11 @@ async function runMigrations(conn: any): Promise<void> {
   // AI trial tracking (cached from Supabase)
   await tryAlter(`ALTER TABLE settings ADD COLUMN ai_trial_start TEXT`)
   await tryAlter(`ALTER TABLE settings ADD COLUMN ai_trial_used INTEGER DEFAULT 0`)
+
+  // Backfill timestamp columns added to existing child tables. SQLite cannot
+  // reliably ADD COLUMN with datetime('now') defaults, so add nullable then fill.
+  try { await conn.run(`UPDATE invoice_items SET updated_at = datetime('now') WHERE updated_at IS NULL`, [], false) } catch { /* ignore */ }
+  try { await conn.run(`UPDATE offer_items SET updated_at = datetime('now') WHERE updated_at IS NULL`, [], false) } catch { /* ignore */ }
 
   // Deduplicate sync_queue and add unique index
   try {
