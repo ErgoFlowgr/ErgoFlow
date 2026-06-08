@@ -326,6 +326,7 @@ async function upsertRows(table: string, rows: Record<string, unknown>[], SAFE_C
         `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) ON CONFLICT(id) DO UPDATE SET ${updates}`,
         vals
       )
+      if (localRow && rowId) remoteWon.add(rowId)
     } catch (e) {
       console.error(`[sync-mobile] upsert ${table}:`, e)
     }
