@@ -1,8 +1,20 @@
 {
   "name": "ergoflow",
-  "version": "0.8.16",
+  "version": "0.8.15",
   "description": "Ergoflow Craftsmen — CRM for craftsmen with AI assistant",
   "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "electron:dev": "wait-on http://127.0.0.1:13579 && cross-env NODE_ENV=development node scripts/launch-electron.js",
+    "start": "node scripts/start-dev.js",
+    "build": "vite build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "electron:build": "npm run build && npm run build:electron && electron-builder --win && node -e \"const fs=require('fs'),s='C:/Users/Stavros/Desktop/Installers',d='E:/ErgoflowInstaller';fs.mkdirSync(d,{recursive:true});['ErgoflowCraftsmenSetup.exe','ErgoflowCraftsmenSetup.exe.blockmap','latest.yml'].forEach(f=>{fs.copyFileSync(s+'/'+f,d+'/'+f);console.log('Copied:',f)})\"",
+    "android:build": "npm run build && npx cap sync android && cd android && gradlew assembleRelease && cd .. && node -e \"const fs=require('fs'),v=require('./package.json').version,src='android/app/build/outputs/apk/release/app-release.apk',name='ErgoflowCraftsmen-'+v+'.apk',desk='C:/Users/Stavros/Desktop/Installers',e='E:/ErgoflowInstaller';fs.mkdirSync(desk,{recursive:true});fs.mkdirSync(e,{recursive:true});fs.copyFileSync(src,desk+'/'+name);fs.copyFileSync(src,e+'/'+name);console.log('APK copied:',name)\"",
+    "rebuild": "electron-rebuild -f -w better-sqlite3 keytar",
+    "preview": "vite preview",
+    "lint:security": "eslint \"src/**/*.{ts,tsx}\" \"electron/**/*.ts\" \"supabase/functions/**/*.ts\" --no-warn-ignored"
+  },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.36.3",
     "@capacitor-community/sqlite": "^8.1.0",
@@ -26,5 +38,72 @@
     "react-i18next": "^15.5.1",
     "react-router-dom": "^7.5.0",
     "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.7.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.14.0",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/react": "^19.1.1",
+    "@types/react-dom": "^19.1.2",
+    "@types/uuid": "^10.0.0",
+    "@vitejs/plugin-react": "^4.4.1",
+    "autoprefixer": "^10.4.21",
+    "buffer": "^6.0.3",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "^35.7.5",
+    "electron-builder": "^25.1.8",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-security": "^3.0.1",
+    "jimp": "^1.6.0",
+    "postcss": "^8.5.3",
+    "sharp": "^0.34.5",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.60.0",
+    "vite": "^6.3.1",
+    "vite-plugin-electron": "^0.29.0",
+    "vite-plugin-electron-renderer": "^0.14.6",
+    "wait-on": "^8.0.3"
+  },
+  "build": {
+    "appId": "com.ergoflow.app",
+    "productName": "Ergoflow Craftsmen",
+    "directories": {
+      "output": "C:/Users/Stavros/Desktop/Installers"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/icon.ico",
+        "to": "assets/icon.ico"
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "perMachine": false,
+      "installerIcon": "assets/icon.ico",
+      "uninstallerIcon": "assets/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "artifactName": "ErgoflowCraftsmenSetup.exe",
+      "include": "build/installer.nsh"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "ErgoFlowgr",
+      "repo": "ErgoFlow"
+    }
   }
 }
