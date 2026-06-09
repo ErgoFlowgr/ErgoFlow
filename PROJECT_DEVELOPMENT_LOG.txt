@@ -169,3 +169,9 @@ Short summary:
 - The project now has verification scripts for release fixes, Android startup assumptions, React hook imports, and mobile Settings sync assumptions.
 - Main product judgment: offline-first design is right for tradesmen; most work can be done without internet after initial sync, but invoice sending needs connection.
 - Main weak links to keep watching: first-sync UX clarity, settings/status messaging, installer/update behavior around running tray processes, release discipline around explicit approval, and VAPI edge-function deployment credentials.
+
+2026-06-09 10:45 - v0.8.13 release preparation
+Short summary:
+- Prepared desktop and Android release build 0.8.13 after verified mobile sync parent-recovery work and document-logo output checks.
+- Kept desktop and Android release lanes separate: desktop installer via Electron/GitHub release, Android APK via Capacitor/Firebase App Distribution.
+- Aligned package metadata to 0.8.13 and Android native version to versionCode 95 / versionName 0.8.13 before building artifacts.
