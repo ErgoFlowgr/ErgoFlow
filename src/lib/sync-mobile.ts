@@ -293,6 +293,25 @@ async function hasMissingParent(
         if (parentRow) {
           console.log(`[sync-mobile] recovered missing parent ${ref.parentTable}/${parentIdText} for ${table}/${String(row['id'] ?? 'unknown')}`)
         }
+      } else if (ref.parentTable === 'customers') {
+        const now = new Date().toISOString()
+        const fallbackName = typeof row['customer_name'] === 'string' && row['customer_name'].trim()
+          ? row['customer_name'].trim()
+          : 'Recovered customer'
+        await upsertRows(ref.parentTable, [{
+          id: parentIdText,
+          name: fallbackName,
+          phone: typeof row['customer_phone'] === 'string' ? row['customer_phone'] : null,
+          address: typeof row['customer_address'] === 'string' ? row['customer_address'] : null,
+          notes: `Recovered locally during sync because ${table}/${String(row['id'] ?? 'unknown')} referenced this missing customer.`,
+          created_at: typeof row['created_at'] === 'string' ? row['created_at'] : now,
+          updated_at: typeof row['updated_at'] === 'string' ? row['updated_at'] : now,
+          synced: 1,
+        }], SAFE_COL, fetchParent)
+        parentRow = await db.get(`SELECT id FROM ${ref.parentTable} WHERE id = ?`, [parentIdText]) as { id: string } | undefined
+        if (parentRow) {
+          console.warn(`[sync-mobile] created local fallback parent ${ref.parentTable}/${parentIdText} for orphaned ${table}/${String(row['id'] ?? 'unknown')}`)
+        }
       }
     }
 
