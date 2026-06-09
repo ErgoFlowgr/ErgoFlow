@@ -1,0 +1,117 @@
+.
+./app_textures
+./app_webview
+./app_webview/BrowserMetrics-spare.pma
+./app_webview/Default
+./app_webview/Default/Cookies
+./app_webview/Default/Cookies-journal
+./app_webview/Default/Local Storage
+./app_webview/Default/Local Storage/leveldb
+./app_webview/Default/Local Storage/leveldb/000003.log
+./app_webview/Default/Local Storage/leveldb/CURRENT
+./app_webview/Default/Local Storage/leveldb/LOCK
+./app_webview/Default/Local Storage/leveldb/LOG
+./app_webview/Default/Local Storage/leveldb/LOG.old
+./app_webview/Default/Local Storage/leveldb/MANIFEST-000001
+./app_webview/Default/PersistentOriginTrials
+./app_webview/Default/PersistentOriginTrials/LOCK
+./app_webview/Default/PersistentOriginTrials/LOG
+./app_webview/Default/PersistentOriginTrials/LOG.old
+./app_webview/Default/Session Storage
+./app_webview/Default/Session Storage/000003.log
+./app_webview/Default/Session Storage/CURRENT
+./app_webview/Default/Session Storage/LOCK
+./app_webview/Default/Session Storage/LOG
+./app_webview/Default/Session Storage/MANIFEST-000001
+./app_webview/Default/Shared Dictionary
+./app_webview/Default/Shared Dictionary/cache
+./app_webview/Default/Shared Dictionary/cache/index
+./app_webview/Default/Shared Dictionary/cache/index-dir
+./app_webview/Default/Shared Dictionary/cache/index-dir/the-real-index
+./app_webview/Default/Shared Dictionary/db
+./app_webview/Default/Shared Dictionary/db-journal
+./app_webview/Default/blob_storage
+./app_webview/Default/blob_storage/a83896a2-6eb5-42ec-85cd-03e9ac45c76f
+./app_webview/Default/shared_proto_db
+./app_webview/Default/shared_proto_db/000003.log
+./app_webview/Default/shared_proto_db/CURRENT
+./app_webview/Default/shared_proto_db/LOCK
+./app_webview/Default/shared_proto_db/LOG
+./app_webview/Default/shared_proto_db/LOG.old
+./app_webview/Default/shared_proto_db/MANIFEST-000001
+./app_webview/Default/shared_proto_db/metadata
+./app_webview/Default/shared_proto_db/metadata/000003.log
+./app_webview/Default/shared_proto_db/metadata/CURRENT
+./app_webview/Default/shared_proto_db/metadata/LOCK
+./app_webview/Default/shared_proto_db/metadata/LOG
+./app_webview/Default/shared_proto_db/metadata/LOG.old
+./app_webview/Default/shared_proto_db/metadata/MANIFEST-000001
+./app_webview/last-exit-info
+./app_webview/pref_store
+./app_webview/variations_seed
+./app_webview/variations_stamp
+./app_webview/webview_data.lock
+./cache
+./cache/Crash Reports
+./cache/Crash Reports/ANR Variations
+./cache/Crash Reports/ANR Variations/0c582667f91fff98e76924126c90ea74
+./cache/Crash Reports/ANR Variations/73c9f8507ddb181ee4301a64c074b47b
+./cache/Crash Reports/ANR Variations/7e203fd14420f67d0399c023f9e7d423
+./cache/Crash Reports/ANR Variations/ae053392c6faaf270d96941c36e2d439
+./cache/Crash Reports/ANR Variations/e579fd250d8661652c8d24c70aa435d5
+./cache/WebView
+./cache/WebView/Crash Reports
+./cache/WebView/Crashpad
+./cache/WebView/Crashpad/attachments
+./cache/WebView/Crashpad/completed
+./cache/WebView/Crashpad/new
+./cache/WebView/Crashpad/pending
+./cache/WebView/Default
+./cache/WebView/Default/HTTP Cache
+./cache/WebView/Default/HTTP Cache/Cache_Data
+./cache/WebView/Default/HTTP Cache/Cache_Data/16214854c5e23182_0
+./cache/WebView/Default/HTTP Cache/Cache_Data/7e4876a78a1f2707_0
+./cache/WebView/Default/HTTP Cache/Cache_Data/98337ee499e61aee_0
+./cache/WebView/Default/HTTP Cache/Cache_Data/a4fb262c714370ad_0
+./cache/WebView/Default/HTTP Cache/Cache_Data/b73d5b727dd3c2ea_0
+./cache/WebView/Default/HTTP Cache/Cache_Data/c02f216b3056134b_0
+./cache/WebView/Default/HTTP Cache/Cache_Data/c6b92c6b665b6b03_0
+./cache/WebView/Default/HTTP Cache/Cache_Data/index
+./cache/WebView/Default/HTTP Cache/Cache_Data/index-dir
+./cache/WebView/Default/HTTP Cache/Cache_Data/index-dir/the-real-index
+./cache/WebView/Default/HTTP Cache/Code Cache
+./cache/WebView/Default/HTTP Cache/Code Cache/js
+./cache/WebView/Default/HTTP Cache/Code Cache/js/2356bf48fcf58e1e_0
+./cache/WebView/Default/HTTP Cache/Code Cache/js/4f7d264d60b84ff2_0
+./cache/WebView/Default/HTTP Cache/Code Cache/js/52787503d0641f16_0
+./cache/WebView/Default/HTTP Cache/Code Cache/js/7a984ea57f2efcdf_0
+./cache/WebView/Default/HTTP Cache/Code Cache/js/97dd3cd14cc11b5a_0
+./cache/WebView/Default/HTTP Cache/Code Cache/js/bc2ec32b837724d9_0
+./cache/WebView/Default/HTTP Cache/Code Cache/js/c1bf92908cac8444_0
+./cache/WebView/Default/HTTP Cache/Code Cache/js/da0d57a9cff43639_0
+./cache/WebView/Default/HTTP Cache/Code Cache/js/df1a865f11c7657c_0
+./cache/WebView/Default/HTTP Cache/Code Cache/js/f3db0c0dde5b45ad_0
+./cache/WebView/Default/HTTP Cache/Code Cache/js/index
+./cache/WebView/Default/HTTP Cache/Code Cache/js/index-dir
+./cache/WebView/Default/HTTP Cache/Code Cache/js/index-dir/the-real-index
+./cache/WebView/Default/HTTP Cache/Code Cache/wasm
+./cache/WebView/Default/HTTP Cache/Code Cache/wasm/index
+./cache/WebView/Default/HTTP Cache/Code Cache/wasm/index-dir
+./cache/WebView/Default/HTTP Cache/Code Cache/wasm/index-dir/the-real-index
+./cache/WebView/Default/HTTP Cache/No_Vary_Search
+./cache/WebView/Default/HTTP Cache/No_Vary_Search/journal.baj
+./cache/WebView/Default/HTTP Cache/No_Vary_Search/snapshot.baf
+./cache/WebView/SafeBrowsing
+./cache/WebView/font_unique_name_table.pb
+./code_cache
+./databases
+./databases/ergoflow_6da25bf3_0ec6_4e93_8c75_7049dc78e3deSQLite.db
+./databases/ergoflow_defaultSQLite.db
+./files
+./files/profileInstalled
+./no_backup
+./shared_prefs
+./shared_prefs/AwOriginVisitLoggerPrefs.xml
+./shared_prefs/CapWebViewSettings.xml
+./shared_prefs/CapacitorStorage.xml
+./shared_prefs/WebViewChromiumPrefs.xml
