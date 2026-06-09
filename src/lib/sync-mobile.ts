@@ -303,7 +303,7 @@ async function hasMissingParent(
           name: fallbackName,
           phone: typeof row['customer_phone'] === 'string' ? row['customer_phone'] : null,
           address: typeof row['customer_address'] === 'string' ? row['customer_address'] : null,
-          notes: `Recovered locally during sync because ${table}/${String(row['id'] ?? 'unknown')} referenced this missing customer.`,
+          notes: null,
           created_at: typeof row['created_at'] === 'string' ? row['created_at'] : now,
           updated_at: typeof row['updated_at'] === 'string' ? row['updated_at'] : now,
           synced: 1,
