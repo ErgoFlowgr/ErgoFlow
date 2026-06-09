@@ -45,7 +45,12 @@ function readMinimizeToTraySetting(): boolean {
 
 function createTray() {
   if (tray) return  // guard against double creation (hot reload in dev)
-  tray = new Tray(getRuntimeIconPath())
+  try {
+    tray = new Tray(getRuntimeIconPath())
+  } catch (err) {
+    console.error('Tray icon unavailable:', err instanceof Error ? err.message : err)
+    return
+  }
   tray.setToolTip('Ergoflow')
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -78,7 +83,7 @@ function createWindow() {
     height: 800,
     minWidth: 900,
     minHeight: 600,
-    icon: path.join(__dirname, '../build/icon.png'),
+    icon: getRuntimeIconPath(),
     backgroundColor: '#0f1117',
     titleBarStyle: 'hidden',
     titleBarOverlay: {
