@@ -183,6 +183,18 @@ async function pull(token: string): Promise<{ remoteWon: Set<string>; ok: boolea
   let anyFailed = false
   let firstFailure = ''
 
+  const fetchParent = async (parentTable: string, parentId: string): Promise<Record<string, unknown> | null> => {
+    if (!ALLOWED_SYNC_TABLES.has(parentTable)) return null
+    const res = await fetch(`${config.url}/rest/v1/${parentTable}?id=eq.${encodeURIComponent(parentId)}&select=*`, { headers })
+    if (!res.ok) {
+      const body = await res.text().catch(() => '')
+      console.warn(`[sync-mobile] parent fetch ${parentTable}/${parentId} failed: HTTP ${res.status}${body ? ` ${body.slice(0, 160)}` : ''}`)
+      return null
+    }
+    const rows = await res.json() as Record<string, unknown>[]
+    return rows[0] ?? null
+  }
+
   for (const table of SYNC_TABLES) {
     try {
       const filter = lastPull ? `updated_at=gte.${lastPull}&select=*` : `select=*`
@@ -206,7 +218,7 @@ async function pull(token: string): Promise<{ remoteWon: Set<string>; ok: boolea
       }
 
       const rows = await res.json() as Record<string, unknown>[]
-      const won = await upsertRows(table, rows, SAFE_COL)
+      const won = await upsertRows(table, rows, SAFE_COL, fetchParent)
       for (const id of won) remoteWon.add(`${table}:${id}`)
     } catch (e) {
       console.error(`[sync-mobile] pull ${table}:`, e)
@@ -256,7 +268,13 @@ async function pull(token: string): Promise<{ remoteWon: Set<string>; ok: boolea
 }
 
 // Returns set of record IDs (not table:id) where remote was newer and won.
-async function hasMissingParent(table: string, row: Record<string, unknown>, localCols: Set<string>): Promise<boolean> {
+async function hasMissingParent(
+  table: string,
+  row: Record<string, unknown>,
+  localCols: Set<string>,
+  SAFE_COL: RegExp,
+  fetchParent?: (parentTable: string, parentId: string) => Promise<Record<string, unknown> | null>,
+): Promise<boolean> {
   const parentRefs = PARENT_FK_BY_TABLE[table]
   if (!parentRefs?.length) return false
 
@@ -264,9 +282,22 @@ async function hasMissingParent(table: string, row: Record<string, unknown>, loc
     if (!localCols.has(ref.column)) continue
     const parentId = row[ref.column]
     if (parentId === null || parentId === undefined || parentId === '') continue
-    const parentRow = await db.get(`SELECT id FROM ${ref.parentTable} WHERE id = ?`, [String(parentId)]) as { id: string } | undefined
+    const parentIdText = String(parentId)
+    let parentRow = await db.get(`SELECT id FROM ${ref.parentTable} WHERE id = ?`, [parentIdText]) as { id: string } | undefined
+
+    if (!parentRow && fetchParent) {
+      const remoteParent = await fetchParent(ref.parentTable, parentIdText)
+      if (remoteParent) {
+        await upsertRows(ref.parentTable, [remoteParent], SAFE_COL, fetchParent)
+        parentRow = await db.get(`SELECT id FROM ${ref.parentTable} WHERE id = ?`, [parentIdText]) as { id: string } | undefined
+        if (parentRow) {
+          console.log(`[sync-mobile] recovered missing parent ${ref.parentTable}/${parentIdText} for ${table}/${String(row['id'] ?? 'unknown')}`)
+        }
+      }
+    }
+
     if (!parentRow) {
-      console.warn(`[sync-mobile] skip ${table}/${String(row['id'] ?? 'unknown')}: missing parent ${ref.parentTable}/${String(parentId)}`)
+      console.warn(`[sync-mobile] skip ${table}/${String(row['id'] ?? 'unknown')}: missing parent ${ref.parentTable}/${parentIdText}`)
       return true
     }
   }
@@ -274,7 +305,12 @@ async function hasMissingParent(table: string, row: Record<string, unknown>, loc
   return false
 }
 
-async function upsertRows(table: string, rows: Record<string, unknown>[], SAFE_COL: RegExp): Promise<Set<string>> {
+async function upsertRows(
+  table: string,
+  rows: Record<string, unknown>[],
+  SAFE_COL: RegExp,
+  fetchParent?: (parentTable: string, parentId: string) => Promise<Record<string, unknown> | null>,
+): Promise<Set<string>> {
   const remoteWon = new Set<string>()
   if (!rows.length) return remoteWon
 
@@ -304,7 +340,7 @@ async function upsertRows(table: string, rows: Record<string, unknown>[], SAFE_C
       }
     }
 
-    if (await hasMissingParent(table, row, localCols)) continue
+    if (await hasMissingParent(table, row, localCols, SAFE_COL, fetchParent)) continue
 
     // sync_enabled is device-local — never let remote overwrite it
     const cols = Object.keys(row).filter(c =>
