@@ -181,3 +181,8 @@ Short summary:
 
 [2026-06-09 16:12] Desktop release v0.8.14
 - Prepared v0.8.14 desktop release with the AI helper camera normal rear-lens preference included for updater distribution.
+
+[2026-06-09 20:14] Desktop tray icon packaging fix
+- Bumped desktop package to 0.8.15.
+- Packaged assets/icon.ico as an extra Electron resource and changed tray/window runtime icon lookup to use the packaged resource path.
+- Fixes packaged app startup/tray failures caused by missing ../build/icon.png.

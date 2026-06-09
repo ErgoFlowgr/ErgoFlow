@@ -24,6 +24,13 @@ let isQuitting = false
 // In-memory state — updated via IPC when user toggles the setting
 let minimizeToTray = false
 
+function getRuntimeIconPath(): string {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'assets', 'icon.ico')
+  }
+  return path.join(__dirname, '../assets/icon.ico')
+}
+
 function destroyTray() {
   try { tray?.destroy() } catch { /* ignore */ }
   tray = null
@@ -38,8 +45,7 @@ function readMinimizeToTraySetting(): boolean {
 
 function createTray() {
   if (tray) return  // guard against double creation (hot reload in dev)
-  const iconPath = path.join(__dirname, '../build/icon.png')
-  tray = new Tray(iconPath)
+  tray = new Tray(getRuntimeIconPath())
   tray.setToolTip('Ergoflow')
   const contextMenu = Menu.buildFromTemplate([
     {

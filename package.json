@@ -1,6 +1,6 @@
 {
   "name": "ergoflow",
-  "version": "0.8.14",
+  "version": "0.8.15",
   "description": "Ergoflow Craftsmen — CRM for craftsmen with AI assistant",
   "main": "dist-electron/main.js",
   "scripts": {
@@ -77,6 +77,12 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "assets/icon.ico",
+        "to": "assets/icon.ico"
+      }
     ],
     "win": {
       "target": "nsis",
