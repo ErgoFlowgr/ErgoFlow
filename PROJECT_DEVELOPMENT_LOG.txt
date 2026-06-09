@@ -175,3 +175,6 @@ Short summary:
 - Prepared desktop and Android release build 0.8.13 after verified mobile sync parent-recovery work and document-logo output checks.
 - Kept desktop and Android release lanes separate: desktop installer via Electron/GitHub release, Android APK via Capacitor/Firebase App Distribution.
 - Aligned package metadata to 0.8.13 and Android native version to versionCode 95 / versionName 0.8.13 before building artifacts.
+
+[2026-06-09 11:34] AI helper camera lens preference
+- Adjusted product-helper photo capture to prefer the normal rear lens instead of Android ultrawide by requesting/applying a rear-camera zoom target while preserving camera fallback behavior.

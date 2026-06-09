@@ -331,7 +331,29 @@ export default function Chat() {
   const openCamera = async () => {
     setShowCamera(true)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          advanced: [{ zoom: 2 } as MediaTrackConstraintSet]
+        },
+        audio: false
+      })
+
+      const [track] = stream.getVideoTracks()
+      const capabilities = track?.getCapabilities?.()
+      if (capabilities && 'zoom' in capabilities) {
+        const zoom = capabilities.zoom as { min?: number; max?: number; step?: number }
+        const normalRearLensZoom = Math.min(Math.max(zoom.min ?? 1, 2), zoom.max ?? 2)
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: normalRearLensZoom } as MediaTrackConstraintSet] })
+        } catch {
+          // Some Android browsers expose zoom capabilities but reject applying them.
+          // Keep the rear camera stream rather than blocking photo capture.
+        }
+      }
+
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
