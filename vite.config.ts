@@ -30,6 +30,10 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
   },
+  preview: {
+    host: '127.0.0.1',
+    allowedHosts: ['www.ergo-flow.gr', 'ergo-flow.gr'],
+  },
   // Prevent Vite from trying to bundle Node.js-only modules
   optimizeDeps: {
     exclude: ['better-sqlite3', 'keytar', 'pdf-parse', 'electron'],
