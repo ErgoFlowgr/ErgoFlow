@@ -1,0 +1,171 @@
+ErgoFlow development log - work with Tony Junior
+Generated/updated: 2026-05-23 17:48:13 GTBST
+Project: D:\Projects\ErgoFlow\Claude\crm-app
+Scope: Short operational history reconstructed from git log, session notes, existing project state, and verified project files. This is a workshop record, not a formal release note.
+
+2026-05-22 08:29 - Tony Junior / Hermes setup
+Short summary:
+- Created and adopted the Tony Junior working style: practical, Windows-native, careful with files, focused on ErgoFlow, debugging, local operations, Telegram assistance, and long-term reliability.
+- Verified Hermes was functional on the Windows machine, including terminal/file access, config paths, OpenAI Codex auth, and SOUL.md persona setup.
+- Identified setup weak points: Hermes update available, some web/provider keys missing, Telegram/gateway not fully configured at that stage, and CRM database files needing disciplined backup thinking.
+
+2026-05-22 09:12 - ErgoFlow project discovery
+Short summary:
+- Found the real ErgoFlow source project at D:\Projects\ErgoFlow\Claude\crm-app.
+- Identified npm as the package manager and the stack as React, Vite, TypeScript, Electron, Electron Builder, Capacitor Android, Tailwind, Supabase, better-sqlite3, keytar, and Anthropic SDK.
+- Mapped the main app entry points: index.html, src/main.tsx, src/App.tsx, electron/main.ts, electron/preload.ts, electron/db.ts, electron/sync.ts, and related Electron backend modules.
+- Found available scripts for dev/start/build/electron build/android build/rebuild/preview.
+- Confirmed the app has major routes for dashboard, jobs, offers, invoices, inventory, calls, customers, chat, and settings.
+
+2026-05-22 10:36 - Startup and sync/database health check
+Short summary:
+- Ran a low-impact startup check: npm dependencies were installed, Vite started, and Electron launched.
+- Confirmed source git state stayed clean during the check.
+- Found startup sync/database problems: database connection not open, invalid SQLite bind values, and offer_items missing updated_at.
+- Recommended read-only root-cause inspection of db/sync/migration logic before patching.
+
+2026-05-22 11:34 - Telegram / Hermes gateway operations
+Short summary:
+- Verified Hermes gateway was installed as a Windows Scheduled Task named Hermes_Gateway and running in the background.
+- Confirmed it starts at Stavros logon using pythonw.exe.
+- Noted limits: it does not run before Windows login, and some Task Scheduler battery/time settings need admin rights to change.
+
+2026-05-22 11:34 - Release workflow inspection for v0.8.10
+Short summary:
+- Prepared the ErgoFlow release workflow without executing release actions.
+- Verified GitHub repo target as ErgoFlowgr/ErgoFlow and Firebase target as project ergoflow-craftsmen with Android app com.ergoflow.app.
+- Confirmed release paths: installer output at C:\Users\Stavros\Desktop\Installers, archive at E:\ErgoflowInstaller, and E:\ErgoflowBackup as read-only history.
+- Found no current GitHub releases/tags at inspection time.
+- Found version mismatch before release: package.json 0.8.9, package-lock.json 0.8.4, Android versionName 0.8.10.
+- Drafted safe staged release rules: inspect, align-version, build, draft-github-release, firebase-upload, final-report.
+
+2026-05-22 11:37 - Release operating rules saved
+Short summary:
+- Established hard release rules: always check git status first, do not print secrets, do not commit/push/release/upload unless explicitly approved, use draft GitHub releases first, and report commands/files/artifacts/verification/risks.
+- Saved ErgoFlow operational context so future release tasks can run with less repeated instruction.
+
+2026-05-22 11:50 - Version alignment to v0.8.10
+Short summary:
+- Ran the approved align-version stage only.
+- Updated package.json and package-lock.json to 0.8.10 using npm version --no-git-tag-version.
+- Verified package.json, package-lock.json, and package-lock root version all matched 0.8.10.
+- Confirmed Android already had applicationId com.ergoflow.app, versionCode 90, and versionName 0.8.10.
+- No build, commit, push, GitHub release, or Firebase upload was done.
+
+2026-05-22 18:04 - Installed Windows app health check
+Short summary:
+- Launched and inspected the installed Windows app from C:\Users\Stavros\AppData\Local\Programs\Ergoflow Craftsmen\Ergoflow Craftsmen.exe.
+- Checked dashboard, jobs, calls, customers, offers, invoices, inventory, AI assistant, settings, console/runtime errors, and sync log.
+- Confirmed the installed app opened, user/session was active, main navigation worked, and operational data rendered.
+- Found installed version was still v0.8.9, meaning v0.8.10 had not yet been built/installed.
+- Found release-clean concerns: Supabase schema missing column for settings sync, Google font blocked by CSP, a small encoding issue showing Cretewine Â· 6971961206, and plan gating for Calls/AI during testing.
+- Recommended fixing or confirming the Supabase migration before building v0.8.10.
+
+2026-05-22 18:28 - Release fix pack for updater, sync, CSP, and text encoding
+Short summary:
+- Fixed Windows updater/install shutdown path by adding explicit update-install quit state, destroying the tray before quitAndInstall, preventing close-to-tray during update install, and disabling auto-install-on-ordinary-quit.
+- Removed duplicate update-ready handling from Layout so update behavior stays centralized.
+- Tightened settings sync by excluding local-only/secret/runtime fields from Supabase push and adding a safe migration for shareable runtime settings.
+- Allowed configured Google font URLs in production CSP.
+- Fixed customer-page mojibake Greek text and broken separator characters.
+- Added scripts/verify-release-fixes.mjs and verified with Electron build and Vite build.
+
+2026-05-22 19:23 - Android startup / black-screen diagnostics and fixes
+Short summary:
+- Added Capacitor Android WebView server settings using androidScheme https.
+- Improved native/mobile platform detection so web preview is not treated like real Android native SQLite.
+- Added startup timeout/logging stages in App initialization so startup hangs show an error instead of a silent black/loading screen.
+- Added scripts/verify-android-startup-fixes.mjs to lock the Android startup assumptions.
+
+2026-05-22 21:13 - Version movement toward Android test builds
+Short summary:
+- Updated package.json and package-lock.json as part of the next test-build version movement after v0.8.10.
+- Firebase debug logging was captured during the release/test workflow.
+- Kept the release path staged around explicit approval rather than automatic push/upload.
+
+2026-05-22 22:49 - React hook import fix for mobile post-login screen
+Short summary:
+- Fixed missing React/router imports in src/components/Layout.tsx that could break the authenticated layout after login.
+- Added scripts/verify-react-hook-imports.mjs so Layout hook imports are checked before mobile distribution.
+- This became part of the Android black-screen fix path.
+
+2026-05-22 22:59 - Version bumped to v0.8.12 candidate
+Short summary:
+- Updated package.json and package-lock.json to the next Android tester version candidate.
+- Prepared the app version line for Firebase tester distribution.
+
+2026-05-22 23:34 - Android v0.8.12 uploaded to Firebase testers
+Short summary:
+- Built and distributed ErgoFlow Android 0.8.12 to Firebase App Distribution group testers.
+- Verified React hook imports, Android startup fixes, Vite build, Capacitor Android sync, Gradle APK build, and Firebase upload.
+- Firebase reported the new release uploaded and distributed successfully to testers.
+- Local APK artifact was android/app/build/outputs/apk/debug/app-debug.apk.
+- Found Windows bash Android builds may need JAVA_HOME set to Android Studio JBR.
+
+2026-05-22 23:39 - Mobile Settings sync investigation and prepared fix
+Short summary:
+- Investigated why Android login worked but Settings company/personal data initially appeared missing.
+- Found a likely fresh-login deadlock: local sync_enabled could start off, so initial cloud Settings pull would not run.
+- Added ensureMobileCloudSettingsHydrated() in src/App.tsx and aligned Android settings push exclusions in src/lib/sync-mobile.ts.
+- Added scripts/verify-mobile-settings-sync.mjs and verified the prepared APK locally.
+- Later observation showed Settings data did appear on the installed app after sync delay, so this was treated as first-sync/UX timing rather than proof of broken uploaded APK.
+
+2026-05-23 09:04 - Project development log added
+Short summary:
+- Added PROJECT_DEVELOPMENT_LOG.txt to keep a simple dated project history inside the app repo.
+- Recorded the early Tony Junior/Hermes setup, project discovery, release workflow, v0.8.10 alignment, and installed-app health check.
+
+2026-05-23 16:30 - Windows installer running-app check improved
+Short summary:
+- Updated build/installer.nsh so the installer kills hidden/running ErgoFlow processes during customCheckAppRunning, before electron-builder's app-running check blocks installation.
+- Kept uninstall cleanup as well.
+- Included both "Ergoflow Craftsmen.exe" and legacy "Ergoflow.exe" process names.
+- Purpose: reduce installer/update failures caused by minimize-to-tray leaving the app alive.
+
+2026-05-23 17:48 - Development log updated
+Short summary:
+- Expanded this file with the later Android, Firebase, Settings sync, and installer/update work.
+- Confirmed current package.json version is 0.8.12 and current git remote is https://github.com/ErgoFlowgr/ErgoFlow.git.
+- Current main technical standing: app is strong enough for controlled early access after first-sync behavior is understood, but sync/status messaging should be clear so testers do not think data disappeared.
+
+Related note outside this app repo - 2026-05-23
+Short summary:
+- The static ErgoFlow website folder at D:\Projects\ErgoFlow\Claude\Webside ai was updated separately to remove public download links and mark ErgoFlow Craftsmen CRM as Coming Soon.
+- That website folder is not a git repository, so it is recorded here only as related project work, not as a crm-app tracked change.
+
+2026-05-26 17:09 - VAPI Gianna voice and caller-ID investigation
+Short summary:
+- Investigated a live VAPI call problem where Gianna used the wrong voice and asked the caller for a phone number even though the incoming call had caller ID.
+- Restored Gianna's VAPI voice to ElevenLabs voiceId Jv2zcgjn9Qu0uNMKJjb1 via the VAPI assistant API.
+- Added a CALLER-ID HARD RULE to the assistant prompt so {{customer.number}} is treated as the caller phone number and the assistant must not ask for it again.
+- Found the deployed vapi-tools edge function still fails when VAPI sends tool-call arguments as an object instead of a JSON string, returning "No phone number provided." Local code was patched to accept both shapes, but deployment is blocked until Supabase access token/login is available.
+
+2026-06-04 16:04 - Pre-launch safe hardening pass
+Short summary:
+- Ran safe pre-launch checks without committing, pushing, releasing, uploading, or changing product behavior.
+- Verified renderer build, Electron TypeScript build, ESLint security scan, and production npm audit.
+- Cleared production npm audit vulnerabilities by refreshing installed React Router packages to the already-locked 7.16.0 via npm audit fix.
+- Renamed the PostCSS config from postcss.config.js to postcss.config.mjs so Vite no longer reparses it with a module-type warning.
+- Left dev-only Electron/electron-builder audit items unresolved because npm reports the available fix requires breaking major upgrades and explicit approval.
+
+2026-06-04 17:14 - Pre-launch safe hardening follow-up
+Short summary:
+- Added a full renderer TypeScript check with npx tsc --noEmit and fixed the Settings sync-error IPC handler type mismatch without changing runtime behavior.
+- Split Vite production output into app and vendor chunks so the launch build no longer reports the >500 kB chunk warning.
+- Re-verified renderer build, Electron TypeScript build, ESLint security scan, renderer TypeScript check, and production npm audit.
+- Full dev audit still requires approval because the remaining fixes are breaking Electron/electron-builder toolchain upgrades.
+
+2026-06-05 15:46 - Website logo assets
+Short summary:
+- Added a clean vector website logo for ErgoFlow using the established navy/gold tradesman branding.
+- Added a square icon version suitable for favicon, app tile, social avatar, and compact mobile header use.
+- Added a small local preview page to check the primary logo, website header sizing, dark-header contrast, and square icon.
+
+Current standing notes as of 2026-06-04 17:14:00 GTBST
+Short summary:
+- ErgoFlow source project is known and organized at D:\Projects\ErgoFlow\Claude\crm-app.
+- Current app package version in package.json is 0.8.12.
+- Release target context is known: GitHub ErgoFlowgr/ErgoFlow, Firebase project ergoflow-craftsmen, Android app ID 1:186275267371:android:e4057b4aaa503bd62dbb6e, App Distribution group testers.
+- The project now has verification scripts for release fixes, Android startup assumptions, React hook imports, and mobile Settings sync assumptions.
+- Main product judgment: offline-first design is right for tradesmen; most work can be done without internet after initial sync, but invoice sending needs connection.
+- Main weak links to keep watching: first-sync UX clarity, settings/status messaging, installer/update behavior around running tray processes, release discipline around explicit approval, and VAPI edge-function deployment credentials.
