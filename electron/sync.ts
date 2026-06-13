@@ -172,7 +172,7 @@ async function pushOnly(win: BrowserWindow | null) {
   try {
     const url = SUPABASE_URL
     const key = SUPABASE_ANON_KEY
-    let token = await ensureFreshAccessToken(getSessionToken() ?? await getSecret('supabase_access_token'))
+    const token = await ensureFreshAccessToken(getSessionToken() ?? await getSecret('supabase_access_token'))
     if (!url || !key || !token) return
     const ownerId = getOwnerIdFromToken(token)
     if (!ownerId) return
@@ -205,7 +205,7 @@ async function pullOnly(win: BrowserWindow | null) {
   try {
     const url = SUPABASE_URL
     const key = SUPABASE_ANON_KEY
-    let token = await ensureFreshAccessToken(getSessionToken() ?? await getSecret('supabase_access_token'))
+    const token = await ensureFreshAccessToken(getSessionToken() ?? await getSecret('supabase_access_token'))
     if (!url || !key) return
     if (!token) return
     const db = getDb()
