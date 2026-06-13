@@ -50,6 +50,26 @@ interface RawSubData {
   aiTrialUsed: boolean
 }
 
+async function refreshStoredToken(config: { url: string; anonKey: string }): Promise<string | null> {
+  const refreshToken = await platform.getKeychainValue('supabase_refresh_token')
+  if (!refreshToken) return null
+
+  const res = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: config.anonKey },
+    body: JSON.stringify({ refresh_token: refreshToken }),
+    signal: AbortSignal.timeout(5000),
+  })
+  if (!res.ok) return null
+
+  const data = await res.json() as { access_token?: string; refresh_token?: string }
+  if (!data.access_token) return null
+
+  await platform.setToken(data.access_token)
+  if (data.refresh_token) await platform.setKeychainValue('supabase_refresh_token', data.refresh_token)
+  return data.access_token
+}
+
 async function verifyOnline(): Promise<RawSubData | null> {
   try {
     const config = await getSupabaseConfig()

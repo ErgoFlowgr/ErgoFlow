@@ -205,9 +205,8 @@ async function pullOnly(win: BrowserWindow | null) {
   try {
     const url = SUPABASE_URL
     const key = SUPABASE_ANON_KEY
-    let token = getSessionToken() ?? await getSecret('supabase_access_token')
+    let token = await ensureFreshAccessToken(getSessionToken() ?? await getSecret('supabase_access_token'))
     if (!url || !key) return
-    if (!token) token = await refreshAccessToken()
     if (!token) return
     const db = getDb()
     const remoteWon = await pullRemoteChanges(url, key, token, db)
@@ -235,10 +234,11 @@ async function doSync(win: BrowserWindow | null): Promise<boolean> {
   slog('[SYNC] Key: ' + (supabaseKey ? 'OK' : 'MISSING'))
   slog('[SYNC] Token: ' + (accessToken ? 'OK' : 'MISSING'))
 
-  // If no token, try to refresh
-  if (!accessToken) {
-    slog('[SYNC] No token — attempting refresh')
-    accessToken = await refreshAccessToken()
+  // If no token, or the token is expired/near expiry, try to refresh before
+  // the first Supabase request. This avoids a noisy 401-per-table pull cycle.
+  if (!accessToken || isTokenExpiringSoon(accessToken)) {
+    slog(accessToken ? '[SYNC] Token expiring — attempting refresh' : '[SYNC] No token — attempting refresh')
+    accessToken = await refreshAccessToken() ?? accessToken
   }
 
   // Need user's session token to pass RLS
