@@ -257,8 +257,8 @@ ipcMain.handle('keychain:get', async (_e, key: string) => {
 })
 ipcMain.handle('keychain:delete', async (_e, key: string) => {
   await deleteSecret(key)
-  if (key === 'supabase_access_token') setSessionToken('')
-  if (key === 'supabase_refresh_token') setRefreshToken('')
+  if (key === 'supabase_access_token') setSessionToken(null)
+  if (key === 'supabase_refresh_token') setRefreshToken(null)
 })
 
 // ── IPC: SQLite ───────────────────────────────────────────────────────────

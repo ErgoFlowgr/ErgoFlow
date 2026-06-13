@@ -7,7 +7,7 @@
 let accessToken: string | null = null
 let refreshToken: string | null = null
 
-export function setSessionToken(token: string) {
+export function setSessionToken(token: string | null) {
   accessToken = token
 }
 
@@ -15,7 +15,7 @@ export function getSessionToken(): string | null {
   return accessToken
 }
 
-export function setRefreshToken(token: string) {
+export function setRefreshToken(token: string | null) {
   refreshToken = token
 }
 

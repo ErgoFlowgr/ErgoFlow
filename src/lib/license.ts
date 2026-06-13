@@ -82,23 +82,7 @@ async function verifyOnline(): Promise<RawSubData | null> {
     try {
       const payload = JSON.parse(atob(token.split('.')[1])) as { exp?: number }
       if ((payload.exp ?? 0) * 1000 < Date.now() + 60_000) {
-        const refreshToken = await platform.getKeychainValue('supabase_refresh_token')
-        if (refreshToken) {
-          const r = await fetch(`${config.url}/auth/v1/token?grant_type=refresh_token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: config.anonKey },
-            body: JSON.stringify({ refresh_token: refreshToken }),
-            signal: AbortSignal.timeout(5000),
-          })
-          if (r.ok) {
-            const d = await r.json() as { access_token?: string; refresh_token?: string }
-            if (d.access_token) {
-              token = d.access_token
-              await platform.setToken(token)
-              if (d.refresh_token) await platform.setKeychainValue('supabase_refresh_token', d.refresh_token)
-            }
-          }
-        }
+        token = await refreshStoredToken(config) ?? token
       }
     } catch { /* use existing token */ }
 
@@ -115,10 +99,25 @@ async function verifyOnline(): Promise<RawSubData | null> {
       'Content-Type': 'application/json',
     }
 
-    const res = await fetch(
+    let res = await fetch(
       `${config.url}/rest/v1/subscriptions?user_id=eq.${userId}&select=*&limit=1`,
       { headers, signal: AbortSignal.timeout(8000) }
     )
+    if (res.status === 401) {
+      const refreshed = await refreshStoredToken(config)
+      if (refreshed) {
+        token = refreshed
+        headers.Authorization = `Bearer ${token}`
+        try {
+          const payload = JSON.parse(atob(token.split('.')[1])) as { sub?: string }
+          userId = payload.sub ?? userId
+        } catch { /* keep previous user id */ }
+        res = await fetch(
+          `${config.url}/rest/v1/subscriptions?user_id=eq.${userId}&select=*&limit=1`,
+          { headers, signal: AbortSignal.timeout(8000) }
+        )
+      }
+    }
     if (!res.ok) {
       lastVerifyError = `subscriptions_http_${res.status}`
       logLicense(`verify failed: HTTP ${res.status} on /subscriptions`)
