@@ -257,6 +257,8 @@ ipcMain.handle('keychain:get', async (_e, key: string) => {
 })
 ipcMain.handle('keychain:delete', async (_e, key: string) => {
   await deleteSecret(key)
+  if (key === 'supabase_access_token') setSessionToken('')
+  if (key === 'supabase_refresh_token') setRefreshToken('')
 })
 
 // ── IPC: SQLite ───────────────────────────────────────────────────────────
@@ -649,6 +651,30 @@ ipcMain.handle('subscription:check', async () => {
 
     if (!supaUrl || !supaKey) throw new Error('missing supabase config')
 
+    const refreshStoredToken = async (): Promise<string | null> => {
+      const refreshToken = getRefreshToken() ?? await getSecret('supabase_refresh_token')
+      if (!refreshToken) return null
+
+      const refreshRes = await net.fetch(`${supaUrl}/auth/v1/token?grant_type=refresh_token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', apikey: supaKey },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+        signal: AbortSignal.timeout(5000),
+      })
+      if (!refreshRes.ok) return null
+
+      const refreshData = await refreshRes.json() as { access_token?: string; refresh_token?: string }
+      if (!refreshData.access_token) return null
+
+      setSessionToken(refreshData.access_token)
+      await storeSecret('supabase_access_token', refreshData.access_token)
+      if (refreshData.refresh_token) {
+        setRefreshToken(refreshData.refresh_token)
+        await storeSecret('supabase_refresh_token', refreshData.refresh_token)
+      }
+      return refreshData.access_token
+    }
+
     // Get a fresh token — prefer in-memory (loaded at login), fall back to keychain
     let token = getSessionToken() ?? await getSecret('supabase_access_token')
     if (!token) throw new Error('not authenticated')
@@ -656,23 +682,7 @@ ipcMain.handle('subscription:check', async () => {
     try {
       const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()) as { exp?: number; sub?: string }
       if ((payload.exp ?? 0) * 1000 < Date.now() + 5 * 60_000) {
-        const refreshToken = getRefreshToken() ?? await getSecret('supabase_refresh_token')
-        if (refreshToken) {
-          const refreshRes = await net.fetch(`${supaUrl}/auth/v1/token?grant_type=refresh_token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', apikey: supaKey },
-            body: JSON.stringify({ refresh_token: refreshToken }),
-            signal: AbortSignal.timeout(5000),
-          })
-          if (refreshRes.ok) {
-            const refreshData = await refreshRes.json() as { access_token?: string; refresh_token?: string }
-            if (refreshData.access_token) {
-              token = refreshData.access_token
-              await storeSecret('supabase_access_token', token)
-              if (refreshData.refresh_token) await storeSecret('supabase_refresh_token', refreshData.refresh_token)
-            }
-          }
-        }
+        token = await refreshStoredToken() ?? token
       }
     } catch { /* use existing token */ }
 
@@ -692,10 +702,26 @@ ipcMain.handle('subscription:check', async () => {
     }
 
     // Try to read existing subscription row
-    const getRes = await net.fetch(
+    let getRes = await net.fetch(
       `${supaUrl}/rest/v1/subscriptions?user_id=eq.${userId}&select=*&limit=1`,
       { headers, signal: AbortSignal.timeout(5000) }
     )
+
+    if (getRes.status === 401) {
+      const refreshed = await refreshStoredToken()
+      if (refreshed) {
+        token = refreshed
+        headers.Authorization = `Bearer ${token}`
+        try {
+          const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()) as { sub?: string }
+          userId = payload.sub ?? userId
+        } catch { /* keep previous user id */ }
+        getRes = await net.fetch(
+          `${supaUrl}/rest/v1/subscriptions?user_id=eq.${userId}&select=*&limit=1`,
+          { headers, signal: AbortSignal.timeout(5000) }
+        )
+      }
+    }
 
     type SubRow = {
       status: string

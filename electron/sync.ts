@@ -96,6 +96,22 @@ function getOwnerIdFromToken(token: string): string | null {
   }
 }
 
+function isTokenExpiringSoon(token: string, skewMs = 60_000): boolean {
+  try {
+    const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()) as { exp?: number }
+    return !payload.exp || payload.exp * 1000 < Date.now() + skewMs
+  } catch {
+    return true
+  }
+}
+
+async function ensureFreshAccessToken(token: string | null): Promise<string | null> {
+  if (!token || isTokenExpiringSoon(token)) {
+    return await refreshAccessToken()
+  }
+  return token
+}
+
 async function refreshAccessToken(): Promise<string | null> {
   const refreshToken = getRefreshToken() ?? await getSecret('supabase_refresh_token')
   if (!refreshToken) return null
@@ -156,10 +172,8 @@ async function pushOnly(win: BrowserWindow | null) {
   try {
     const url = SUPABASE_URL
     const key = SUPABASE_ANON_KEY
-    let token = getSessionToken() ?? await getSecret('supabase_access_token')
+    let token = await ensureFreshAccessToken(getSessionToken() ?? await getSecret('supabase_access_token'))
     if (!url || !key || !token) return
-    if (!token) token = await refreshAccessToken()
-    if (!token) return
     const ownerId = getOwnerIdFromToken(token)
     if (!ownerId) return
     const db = getDb()
