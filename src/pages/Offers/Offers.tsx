@@ -7,6 +7,7 @@ import {
   getCustomers, getSettings, getInventory, upsertJob, uuid,
   type Offer, type OfferItem, type Customer, type Settings, type InventoryItem,
 } from '../../lib/db'
+import { cancelOfferExpiryReminders, scheduleJobReminder, scheduleOfferExpiryReminders } from '../../lib/notifications'
 
 type FilterType = 'all' | 'pending' | 'accepted' | 'rejected'
 
@@ -337,7 +338,14 @@ export default function Offers() {
         total: it.total,
         sort_order: 0,
       }))
-      await upsertOffer(offData, lineItems)
+      const offerId = await upsertOffer(offData, lineItems)
+      await scheduleOfferExpiryReminders({
+        id: offerId,
+        title: number.trim(),
+        customerName: customerName.trim() || null,
+        expiryDate: expiryDate || null,
+        status,
+      })
       await load()
       closeModal()
     } catch (e) {
@@ -348,6 +356,7 @@ export default function Offers() {
   }
 
   const handleDelete = async (id: string) => {
+    await cancelOfferExpiryReminders(id)
     await deleteOffer(id)
     setDeleteConfirm(null)
     await load()
@@ -418,7 +427,7 @@ export default function Offers() {
         .filter(it => it.description.trim())
         .map(it => `${it.description} x${it.quantity}`)
         .join('\n')
-      await upsertJob({
+      const jobId = await upsertJob({
         customer_id: off.customer_id ?? undefined,
         customer_name: off.customer_name ?? undefined,
         title: `${off.number}${off.customer_name ? ' — ' + off.customer_name : ''}`,
@@ -427,6 +436,13 @@ export default function Offers() {
         priority: 'normal',
         scheduled_date: scheduledDate || null,
         offer_id: off.id,
+      })
+      await scheduleJobReminder({
+        id: jobId,
+        title: `${off.number}${off.customer_name ? ' — ' + off.customer_name : ''}`,
+        customerName: off.customer_name,
+        scheduledDate: scheduledDate || null,
+        status: 'pending',
       })
       navigate('/jobs')
     } finally {
