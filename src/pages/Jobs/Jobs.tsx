@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getJobs, getCustomers, upsertJob, deleteJob, type Job, type Customer } from '../../lib/db'
 import { ipc, isElectron } from '../../lib/electron'
+import { cancelJobReminder, scheduleJobReminder } from '../../lib/notifications'
 
 type Status = Job['status'] | 'all'
 type Priority = Job['priority']
@@ -194,7 +195,7 @@ export default function Jobs() {
   const handleSave = async () => {
     if (!form.title.trim()) return
     setSaving(true)
-    await upsertJob({
+    const jobId = await upsertJob({
       id: editingJob?.id,
       customer_id: form.customer_id || null,
       customer_name: form.customer_name || null,
@@ -207,12 +208,20 @@ export default function Jobs() {
       notes: form.notes || null,
       keep_indefinitely: form.keep_indefinitely ? 1 : 0,
     })
+    await scheduleJobReminder({
+      id: jobId,
+      title: form.title.trim(),
+      customerName: form.customer_name || null,
+      scheduledDate: form.scheduled_date || null,
+      status: form.status,
+    })
     setSaving(false)
     setShowForm(false)
     await load()
   }
 
   const handleDelete = async (id: string) => {
+    await cancelJobReminder(id)
     await deleteJob(id)
     setDeleteConfirm(null)
     await load()
