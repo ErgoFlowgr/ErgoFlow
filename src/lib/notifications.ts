@@ -1,6 +1,7 @@
 import { Capacitor } from '@capacitor/core'
 import { LocalNotifications } from '@capacitor/local-notifications'
 import { ipc, isElectron } from './electron'
+import { getJobs, getOffers, type Job, type Offer } from './db'
 
 type ReminderTarget = {
   id: string
@@ -145,4 +146,28 @@ export async function scheduleOfferExpiryReminders(offer: ReminderTarget & { exp
     `${offer.title}${customer} expires today.`,
     expiryAt,
   )
+}
+
+export async function rescheduleAllReminders(): Promise<void> {
+  const [jobs, offers] = await Promise.all([
+    getJobs(),
+    getOffers(),
+  ])
+
+  await Promise.all([
+    ...jobs.map((job: Job) => scheduleJobReminder({
+      id: job.id,
+      title: job.title,
+      customerName: job.customer_name,
+      scheduledDate: job.scheduled_date,
+      status: job.status,
+    })),
+    ...offers.map((offer: Offer) => scheduleOfferExpiryReminders({
+      id: offer.id,
+      title: offer.number,
+      customerName: offer.customer_name,
+      expiryDate: offer.expiry_date,
+      status: offer.status,
+    })),
+  ])
 }
