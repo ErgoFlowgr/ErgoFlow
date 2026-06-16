@@ -10,6 +10,7 @@ type ReminderTarget = {
 }
 
 const electronTimers = new Map<number, ReturnType<typeof setTimeout>>()
+const MAX_ELECTRON_TIMER_DELAY_MS = 2_147_483_647
 
 function stableNotificationId(seed: string): number {
   let hash = 0
@@ -59,6 +60,27 @@ function cancelElectronNotifications(ids: number[]) {
   }
 }
 
+function scheduleElectronReminder(id: number, title: string, body: string, at: Date) {
+  const delay = at.getTime() - Date.now()
+
+  if (delay <= 0) {
+    void ipc.notify(title, body)
+    electronTimers.delete(id)
+    return
+  }
+
+  const timer = setTimeout(() => {
+    electronTimers.delete(id)
+    if (delay > MAX_ELECTRON_TIMER_DELAY_MS) {
+      scheduleElectronReminder(id, title, body, at)
+      return
+    }
+    void ipc.notify(title, body)
+  }, Math.min(delay, MAX_ELECTRON_TIMER_DELAY_MS))
+
+  electronTimers.set(id, timer)
+}
+
 async function scheduleReminder(id: number, title: string, body: string, at: Date): Promise<void> {
   if (!isFuture(at)) return
 
@@ -78,12 +100,7 @@ async function scheduleReminder(id: number, title: string, body: string, at: Dat
   }
 
   if (isElectron) {
-    const delay = at.getTime() - Date.now()
-    const timer = setTimeout(() => {
-      void ipc.notify(title, body)
-      electronTimers.delete(id)
-    }, delay)
-    electronTimers.set(id, timer)
+    scheduleElectronReminder(id, title, body, at)
   }
 }
 

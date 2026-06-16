@@ -6,6 +6,7 @@ import { ipc, isElectron } from './lib/electron'
 import { platform } from './lib/platform'
 import { db } from './lib/db-driver'
 import { syncNow } from './lib/sync-mobile'
+import { rescheduleAllReminders } from './lib/notifications'
 
 function extractUserIdFromJwt(token: string): string | null {
   try { return (JSON.parse(atob(token.split('.')[1])) as { sub?: string }).sub ?? null } catch { return null }
@@ -164,6 +165,11 @@ export default function App() {
           setOnboarded(true)
           setAuthenticated(true)
           await withStartupTimeout('check subscription', () => checkSubscription(), 15_000)
+          if (isElectron) {
+            setTimeout(() => {
+              void rescheduleAllReminders().catch(e => console.warn('[App] reminder reschedule failed:', e))
+            }, 1500)
+          }
           if (s?.sync_enabled) {
             if (isElectron) setTimeout(() => ipc.syncNow(), 1000)
             // Android can keep a stale last_pull_at from an older build/session,
