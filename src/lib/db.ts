@@ -437,6 +437,10 @@ export async function getInvoices(status?: string): Promise<Invoice[]> {
   return db.query('SELECT * FROM invoices ORDER BY created_at DESC') as Promise<Invoice[]>
 }
 
+export async function getInvoicesByCustomer(customerId: string): Promise<Invoice[]> {
+  return db.query('SELECT * FROM invoices WHERE customer_id = ? ORDER BY issue_date DESC, created_at DESC', [customerId]) as Promise<Invoice[]>
+}
+
 export async function getInvoiceItems(invoiceId: string): Promise<InvoiceItem[]> {
   return db.query('SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY sort_order', [invoiceId]) as Promise<InvoiceItem[]>
 }

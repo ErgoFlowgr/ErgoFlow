@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
-  getCustomers, getCallsByCustomer, getJobsByCustomer, getOffersByCustomer,
-  type Customer, type Call, type Job, type Offer,
+  getCustomers, getCallsByCustomer, getJobsByCustomer, getOffersByCustomer, getInvoicesByCustomer,
+  type Customer, type Call, type Job, type Offer, type Invoice,
 } from '../../lib/db'
 
-type Tab = 'info' | 'jobs' | 'offers' | 'calls'
+type Tab = 'info' | 'jobs' | 'offers' | 'invoices' | 'calls'
 
 function priorityDot(p: string) {
   return p === 'high' ? 'bg-red-400' : p === 'normal' ? 'bg-yellow-400' : 'bg-gray-500'
@@ -20,6 +20,10 @@ function offerStatusColor(s: string) {
   return s === 'accepted' ? 'bg-emerald-500/20 text-emerald-400' :
          s === 'rejected' ? 'bg-red-500/20 text-red-400' : 'bg-yellow-500/20 text-yellow-400'
 }
+function invoiceStatusColor(s: string) {
+  return s === 'paid' ? 'bg-emerald-500/20 text-emerald-400' :
+         s === 'draft' ? 'bg-gray-500/20 text-gray-400' : 'bg-yellow-500/20 text-yellow-400'
+}
 
 export default function CustomerProfile() {
   const { id } = useParams<{ id: string }>()
@@ -31,6 +35,7 @@ export default function CustomerProfile() {
   const [calls, setCalls] = useState<Call[]>([])
   const [jobs, setJobs] = useState<Job[]>([])
   const [offers, setOffers] = useState<Offer[]>([])
+  const [invoices, setInvoices] = useState<Invoice[]>([])
   const [tab, setTab] = useState<Tab>('info')
   const [loading, setLoading] = useState(true)
 
@@ -41,11 +46,13 @@ export default function CustomerProfile() {
       getCallsByCustomer(id),
       getJobsByCustomer(id),
       getOffersByCustomer(id).catch(() => [] as Offer[]),
-    ]).then(([customers, c, j, o]) => {
+      getInvoicesByCustomer(id).catch(() => [] as Invoice[]),
+    ]).then(([customers, c, j, o, inv]) => {
       setCustomer(customers.find(cu => cu.id === id) ?? null)
       setCalls(c)
       setJobs(j)
       setOffers(o)
+      setInvoices(inv)
       setLoading(false)
     })
   }, [id])
@@ -64,6 +71,7 @@ export default function CustomerProfile() {
     { key: 'info',   label: t('customers.tabInfo'),   count: 0 },
     { key: 'jobs',   label: t('customers.tabJobs'),   count: jobs.length },
     { key: 'offers', label: t('customers.tabOffers'), count: offers.length },
+    { key: 'invoices', label: t('customers.tabInvoices'), count: invoices.length },
     { key: 'calls',  label: t('customers.tabCalls'),  count: calls.length },
   ]
 
@@ -170,6 +178,31 @@ export default function CustomerProfile() {
               <p className="text-sm font-semibold shrink-0">{off.total.toLocaleString(locale, { style: 'currency', currency: 'EUR' })}</p>
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${offerStatusColor(off.status)}`}>
                 {t(`offers.status_${off.status}`)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Invoices tab */}
+      {tab === 'invoices' && (
+        <div className="space-y-2">
+          {invoices.length === 0 ? (
+            <p className="text-center py-10 text-gray-500 text-sm">{t('invoices.noInvoices')}</p>
+          ) : invoices.map(inv => (
+            <div key={inv.id} className="bg-surface-800 border border-surface-600 rounded-xl px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-surface-700 transition-colors" onClick={() => navigate('/invoices')}>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <p className="text-sm font-medium truncate">{inv.number}</p>
+                  <span className="text-[10px] uppercase tracking-wide text-gray-500 shrink-0">
+                    {inv.document_type === 'receipt' ? t('invoices.typeReceipt') : t('invoices.typeInvoice')}
+                  </span>
+                </div>
+                {inv.issue_date && <p className="text-xs text-gray-500">{new Date(inv.issue_date).toLocaleDateString(locale)}</p>}
+              </div>
+              <p className="text-sm font-semibold shrink-0">{inv.total.toLocaleString(locale, { style: 'currency', currency: 'EUR' })}</p>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${invoiceStatusColor(inv.status)}`}>
+                {t(`invoices.status_${inv.status}`)}
               </span>
             </div>
           ))}
