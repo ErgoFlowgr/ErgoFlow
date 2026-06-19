@@ -2,8 +2,10 @@ node_modules/
 dist/
 dist-electron/
 dist-installer/
-android/
+
+# Native mobile projects: track source/config, ignore generated/local/secret files inside each project.
 ios/
+
 .env
 *.env.local
 *.db

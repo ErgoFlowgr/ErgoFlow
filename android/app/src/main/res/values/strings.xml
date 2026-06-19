@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Ergoflow</string>
+    <string name="title_activity_main">Ergoflow</string>
+    <string name="package_name">com.ergoflow.app</string>
+    <string name="custom_url_scheme">com.ergoflow.app</string>
+</resources>
