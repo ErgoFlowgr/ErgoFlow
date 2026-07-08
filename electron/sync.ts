@@ -448,7 +448,7 @@ async function pushLocalChanges(url: string, key: string, accessToken: string, o
       // For deletes: insert a tombstone so other devices learn about this deletion
       if (item.operation === 'delete') {
         try {
-          await fetch(`${url}/rest/v1/deleted_records`, {
+          await fetch(`${url}/rest/v1/deleted_records?on_conflict=owner_id,table_name,record_id`, {
             method: 'POST',
             headers: { ...headers, Prefer: 'resolution=merge-duplicates' },
             body: JSON.stringify({

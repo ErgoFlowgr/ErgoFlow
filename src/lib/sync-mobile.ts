@@ -447,7 +447,7 @@ async function push(token: string): Promise<{ ok: boolean; reason?: string }> {
         // For deletes: insert a tombstone so other devices sync the deletion
         if (item.operation === 'delete') {
           try {
-            await fetch(`${config.url}/rest/v1/deleted_records`, {
+            await fetch(`${config.url}/rest/v1/deleted_records?on_conflict=owner_id,table_name,record_id`, {
               method: 'POST',
               headers,
               body: JSON.stringify({

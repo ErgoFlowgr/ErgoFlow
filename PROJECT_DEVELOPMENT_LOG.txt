@@ -3,6 +3,34 @@ Generated/updated: 2026-05-23 17:48:13 GTBST
 Project: D:\Projects\ErgoFlow\Claude\crm-app
 Scope: Short operational history reconstructed from git log, session notes, existing project state, and verified project files. This is a workshop record, not a formal release note.
 
+2026-07-05 22:25 WEST - Release readiness and health check
+Short summary:
+- Assessed ErgoFlow 0.8.17 on branch hardening/2026-05-30 as approximately 80-85% ready for private desktop beta, 65-70% ready for Android tester APK, and 60-65% ready for full production release.
+- Fresh health check passed: node, npm, Vite production build, Electron TypeScript build, TypeScript noEmit, ESLint security lint, and Android Gradle assembleRelease.
+- Fresh health check failed in two known areas: npm production audit reports 3 vulnerabilities (form-data high, js-yaml moderate, tar moderate), and npm run android:build refuses to copy a release APK because only an unsigned Gradle output is produced.
+- Main blockers recorded: Android release signing, Supabase migration/function drift, real VAPI phone-call proof, dependency audit cleanup, Stripe/billing placeholders, missing full regression test suite, and Windows desktop code signing.
+
+2026-07-05 22:41 WEST - Immediate health fixes
+Short summary:
+- Ran npm audit fix to update lockfile-resolved transitive packages and clear production dependency audit findings for form-data, js-yaml, and tar.
+- Verified npm audit --omit=dev --audit-level=moderate now reports 0 vulnerabilities.
+- Added missing package author metadata to reduce Electron packaging warnings.
+- Re-verified npm run build, npm run build:electron, npx tsc --noEmit, npm run lint:security, and production audit all pass after the changes.
+- Remaining audit findings are dev/build-tooling only and require breaking upgrades: Electron major upgrade and @electron/rebuild/electron-builder related tar chain.
+
+2026-06-24 15:49 - Android build artifact readiness check
+Short summary:
+- Ran Vite build, ESLint security lint, Android release assemble, APK metadata/signature checks, and ADB device discovery from the laptop workspace.
+- Found release signing is not configured in android/app/build.gradle, so Gradle currently produces app-release-unsigned.apk only.
+- Hardened npm android:build to run Gradle clean assembleRelease and refuse to copy unsigned release output to C:\Users\Stavros\Desktop\Installers.
+
+2026-06-21 16:35 - Laptop project readiness check
+Short summary:
+- Found ErgoFlow app source on the laptop at D:\Projects\ErgoFlow\Claude\crm-app and verified Git branch hardening/2026-05-30 matches origin/hardening/2026-05-30.
+- Verified npm dependencies, .env, Android config, Google services file, Android SDK, ADB, and Android Studio JBR are present.
+- Confirmed Vite build succeeds and Android Gradle release build succeeds when JAVA_HOME points to Android Studio JBR.
+- Fixed Android and Electron build copy steps so they use laptop-safe artifact handling and skip E:\ErgoflowInstaller when the E: drive is not attached.
+
 2026-05-22 08:29 - Tony Junior / Hermes setup
 Short summary:
 - Created and adopted the Tony Junior working style: practical, Windows-native, careful with files, focused on ErgoFlow, debugging, local operations, Telegram assistance, and long-term reliability.
@@ -190,3 +218,9 @@ Short summary:
 - Aligned Android native version metadata with desktop/package version 0.8.15 by setting versionName 0.8.15 and incrementing versionCode to 96.
 - Removed tracked sync-conflict duplicate files from the active project tree as launch hygiene cleanup.
 - Kept cleanup scope to Android version alignment and conflict-file cleanup; no commit, push, release, or Firebase upload was performed.
+
+2026-07-04 23:56 WEST - Supabase delete sync tombstone hardening
+Short summary:
+- Added Supabase migration 025_deleted_records_tombstones.sql for deleted_records tombstones used by Electron and Android sync.
+- Aligned delete tombstone POSTs to use on_conflict=owner_id,table_name,record_id so repeated deletes update the same tombstone row.
+- Verified Vite build, Electron TypeScript build, ESLint security lint, and git diff whitespace check; Supabase local db lint was blocked because the local Postgres/Supabase stack was not reachable.
