@@ -32,8 +32,8 @@ contextBridge.exposeInMainWorld('electron', {
   braveSearch:  (query: string, apiKey: string, lang?: string) => ipcRenderer.invoke('brave:search', query, apiKey, lang),
   fetchHtml:    (url: string)                        => ipcRenderer.invoke('web:fetchHtml', url),
 
-  // myDATA / ΑΑΔΕ invoice submission (bypasses CORS via main process)
-  mydataSubmit: (params: { invoice: unknown, lineItems: unknown[], companyVat: string, mydataUserId: string, mydataApiKey: string }) =>
+  // Bratnet e-invoicing submission (bypasses renderer CORS via main process)
+  mydataSubmit: (params: { invoice: unknown, lineItems: unknown[], companyVat: string, customerVat: string, documentType?: string }) =>
     ipcRenderer.invoke('mydata:submit', params),
 
   // Ollama proxy (bypasses CORS from file:// renderer)

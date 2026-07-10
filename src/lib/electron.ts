@@ -22,7 +22,7 @@ interface ElectronAPI {
   downloadPdf:  (url: string) => Promise<ArrayBuffer>
   braveSearch:  (query: string, apiKey: string, lang?: string) => Promise<unknown>
   fetchHtml:    (url: string) => Promise<string>
-  mydataSubmit: (params: { invoice: any, lineItems: any[], companyVat: string, customerVat: string, mydataUserId?: string, mydataApiKey?: string, documentType?: string }) => Promise<{ success: boolean, mark?: string, error?: string }>
+  mydataSubmit: (params: { invoice: any, lineItems: any[], companyVat: string, customerVat: string, documentType?: string }) => Promise<{ success: boolean, mark?: string, error?: string }>
   ollama: {
     tags:       (baseUrl: string) => Promise<{ models?: Array<{ name: string }> }>
     chat:       (baseUrl: string, body: string) => Promise<{ message: { content: string } }>

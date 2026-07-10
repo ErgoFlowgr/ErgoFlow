@@ -515,25 +515,13 @@ export async function upsertInvoice(inv: Partial<Invoice> & { number: string }, 
 export async function submitInvoiceToMydata(inv: Invoice, items: Omit<InvoiceItem, 'invoice_id'>[]): Promise<{ success: boolean; error?: string }> {
   const s = await getSettings()
   const companyVat      = s?.company_vat      ?? ''
-  const mydataUserId    = s?.mydata_user_id    ?? ''
-  const mydataApiKey    = s?.mydata_api_key    ?? ''
   const bratnetUsername = s?.bratnet_username  ?? ''
   const bratnetApiKey   = s?.bratnet_api_key   ?? ''
 
-  const isElectron = typeof window !== 'undefined' && !!window.electron
-
-  // On Electron the IPC handler reads its own credentials; on Android we need Bratnet creds.
-  if (!isElectron && (!companyVat || !bratnetUsername || !bratnetApiKey)) {
+  // Desktop and mobile both use Bratnet for e-invoicing. Electron still submits
+  // through IPC to bypass renderer CORS, but the required settings are the same.
+  if (!companyVat || !bratnetUsername || !bratnetApiKey) {
     const err = 'Missing Bratnet credentials. Go to Settings → myDATA / Bratnet.'
-    await db.run(
-      `UPDATE invoices SET mydata_status = 'failed', mydata_error = ?, updated_at = datetime('now') WHERE id = ?`,
-      [err, inv.id]
-    )
-    return { success: false, error: err }
-  }
-
-  if (isElectron && (!companyVat || !mydataUserId || !mydataApiKey)) {
-    const err = 'Missing myDATA credentials. Go to Settings → myDATA / ΑΑΔΕ.'
     await db.run(
       `UPDATE invoices SET mydata_status = 'failed', mydata_error = ?, updated_at = datetime('now') WHERE id = ?`,
       [err, inv.id]
@@ -564,8 +552,6 @@ export async function submitInvoiceToMydata(inv: Invoice, items: Omit<InvoiceIte
       lineItems: items,
       companyVat,
       customerVat,
-      mydataUserId,
-      mydataApiKey,
       bratnetUsername: bratnetUsername || undefined,
       bratnetApiKey:   bratnetApiKey   || undefined,
     })

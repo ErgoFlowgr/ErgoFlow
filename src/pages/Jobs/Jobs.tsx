@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef, type PointerEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { getJobs, getCustomers, upsertJob, deleteJob, type Job, type Customer } from '../../lib/db'
@@ -96,6 +96,7 @@ export default function Jobs() {
   const [dragStart, setDragStart] = useState<string | null>(null)
   const [dragEnd, setDragEnd]     = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+  const dragActiveRef = useRef(false)
 
   const location = useLocation()
 
@@ -154,14 +155,23 @@ export default function Jobs() {
 
   useEffect(() => {
     const up = () => {
-      if (!isDragging) return
+      if (!dragActiveRef.current) return
+      dragActiveRef.current = false
       setIsDragging(false)
       // Keep dragStart/dragEnd so right panel shows the selected range
       // (do NOT clear them here — user clears by clicking elsewhere)
     }
     window.addEventListener('mouseup', up)
-    return () => window.removeEventListener('mouseup', up)
-  }, [isDragging])
+    window.addEventListener('touchend', up)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    return () => {
+      window.removeEventListener('mouseup', up)
+      window.removeEventListener('touchend', up)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+  }, [])
 
   const openNew = () => {
     setEditingJob(null)
@@ -261,6 +271,44 @@ export default function Jobs() {
     new Intl.DateTimeFormat(locale, { weekday: 'short' }).format(new Date(2024, 0, 1 + i))
   )
 
+  const finishCalendarDrag = () => {
+    if (!dragActiveRef.current) return
+    dragActiveRef.current = false
+    setIsDragging(false)
+  }
+
+  const handleCalendarPointerDown = (dateStr: string) => (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType === 'mouse' && event.button !== 0) return
+    event.preventDefault()
+    dragActiveRef.current = true
+    setDragStart(dateStr)
+    setDragEnd(dateStr)
+    setIsDragging(true)
+    event.currentTarget.setPointerCapture?.(event.pointerId)
+  }
+
+  const handleCalendarPointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    if (!dragActiveRef.current) return
+    event.preventDefault()
+
+    // On touch/pointer capture, pointer events keep firing on the original cell.
+    // Look up the cell currently under the finger/cursor, like Google Calendar drag select.
+    const target = document.elementFromPoint(event.clientX, event.clientY)
+    const dayCell = target?.closest<HTMLElement>('[data-calendar-date]')
+    const dateStr = dayCell?.dataset.calendarDate
+    if (dateStr) setDragEnd(dateStr)
+  }
+
+  const handleCalendarPointerUp = (event: PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    finishCalendarDrag()
+  }
+
+  const handleCalendarPointerCancel = (event: PointerEvent<HTMLDivElement>) => {
+    event.currentTarget.releasePointerCapture?.(event.pointerId)
+    finishCalendarDrag()
+  }
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -342,13 +390,15 @@ export default function Jobs() {
                 return (
                   <div
                     key={dateStr}
-                    className={`flex flex-col items-center py-0.5 cursor-pointer rounded-lg transition-colors
+                    data-calendar-date={dateStr}
+                    className={`flex flex-col items-center py-0.5 cursor-pointer rounded-lg transition-colors touch-none select-none
                       ${inRange ? 'bg-brand-500/20' : ''}
                       ${!cur ? 'opacity-30' : ''}
                     `}
-                    onMouseDown={() => { setDragStart(dateStr); setDragEnd(dateStr); setIsDragging(true) }}
-                    onMouseEnter={() => { if (isDragging) setDragEnd(dateStr) }}
-                    onClick={() => { setDragStart(dateStr); setDragEnd(dateStr); setIsDragging(false) }}
+                    onPointerDown={handleCalendarPointerDown(dateStr)}
+                    onPointerMove={handleCalendarPointerMove}
+                    onPointerUp={handleCalendarPointerUp}
+                    onPointerCancel={handleCalendarPointerCancel}
                   >
                     <div className={`w-8 h-8 flex items-center justify-center rounded-full text-xs font-medium transition-colors
                       ${isToday ? 'bg-brand-500 text-white' : ''}

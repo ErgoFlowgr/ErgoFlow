@@ -458,8 +458,6 @@ ipcMain.handle('mydata:submit', async (_e, params: {
   }>
   companyVat: string
   customerVat: string
-  mydataUserId: string
-  mydataApiKey: string
 }) => {
   try {
     const { invoice, lineItems, companyVat, customerVat } = params

@@ -1,8 +1,9 @@
 /**
- * e-invoicing submission — Bratnet API for Android, Electron IPC for desktop.
+ * e-invoicing submission — Bratnet API on desktop and mobile.
  *
- * Android path uses the shared provider abstraction in e-invoicing.ts.
- * Electron path is delegated to IPC so provider credentials stay out of renderer code.
+ * Native/mobile path uses the shared provider abstraction in e-invoicing.ts.
+ * Electron path is delegated to IPC so it can bypass renderer CORS and read
+ * Bratnet credentials from the main-process settings database.
  */
 import { BratnetInvoiceProvider } from './e-invoicing'
 
@@ -27,8 +28,6 @@ export interface MydataParams {
   lineItems: MydataLineItem[]
   companyVat: string
   customerVat: string
-  mydataUserId: string  // kept for Electron IPC compat; unused by Bratnet path
-  mydataApiKey: string  // kept for Electron IPC compat; unused by Bratnet path
   bratnetUsername?: string
   bratnetApiKey?: string
 }
@@ -43,14 +42,12 @@ export async function submitToMydata(params: MydataParams): Promise<MydataResult
   const isElectron = typeof window !== 'undefined' && !!window.electron
 
   if (isElectron) {
-    // Electron: delegate entirely to IPC — the main process reads credentials from DB.
+    // Electron: delegate to IPC. Main process reads Bratnet credentials from DB.
     return window.electron!.mydataSubmit({
       invoice: params.invoice,
       lineItems: params.lineItems,
       companyVat: params.companyVat,
       customerVat: params.customerVat,
-      mydataUserId: params.mydataUserId,
-      mydataApiKey: params.mydataApiKey,
       documentType: params.invoice.document_type,
     })
   }

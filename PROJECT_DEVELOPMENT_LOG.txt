@@ -3,6 +3,13 @@ Generated/updated: 2026-05-23 17:48:13 GTBST
 Project: D:\Projects\ErgoFlow\Claude\crm-app
 Scope: Short operational history reconstructed from git log, session notes, existing project state, and verified project files. This is a workshop record, not a formal release note.
 
+2026-07-10 00:27 WEST - Bratnet parity fix for desktop and mobile e-invoicing
+Short summary:
+- Standardized invoice submission prerequisites so both Electron desktop and native mobile require company VAT plus Bratnet username/API key from Settings.
+- Removed the desktop-only AADE/myDATA credential requirement from the submission gate and IPC types.
+- Kept Electron submission routed through main-process IPC for CORS protection while using Bratnet credentials from the local settings database.
+- Verified npm run build, npm run build:electron, and npm run lint:security all pass after the change.
+
 2026-07-05 22:25 WEST - Release readiness and health check
 Short summary:
 - Assessed ErgoFlow 0.8.17 on branch hardening/2026-05-30 as approximately 80-85% ready for private desktop beta, 65-70% ready for Android tester APK, and 60-65% ready for full production release.
@@ -224,3 +231,9 @@ Short summary:
 - Added Supabase migration 025_deleted_records_tombstones.sql for deleted_records tombstones used by Electron and Android sync.
 - Aligned delete tombstone POSTs to use on_conflict=owner_id,table_name,record_id so repeated deletes update the same tombstone row.
 - Verified Vite build, Electron TypeScript build, ESLint security lint, and git diff whitespace check; Supabase local db lint was blocked because the local Postgres/Supabase stack was not reachable.
+
+2026-07-10 18:12 WEST - Jobs calendar mobile drag range selection
+Short summary:
+- Restored Google Calendar-style range selection in the Jobs calendar by replacing mouse-only handlers with pointer handlers.
+- Added touch-safe drag tracking, pointer capture, current-cell detection via elementFromPoint, and touch-none/select-none styling so mobile swipes select dates instead of scrolling/text-selecting.
+- Verified with npm run build and npm run lint:security.
