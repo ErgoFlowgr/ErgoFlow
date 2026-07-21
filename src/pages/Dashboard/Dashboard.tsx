@@ -3,21 +3,18 @@ import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ipc, isElectron } from '../../lib/electron'
 import { db } from '../../lib/db-driver'
-import { getCalls, getCustomers, getCallStats, getJobs, getOffers, type Call, type Job, type Offer } from '../../lib/db'
+import { getCalls, getCustomers, getJobs, getOffers, type Call, type Job, type Offer } from '../../lib/db'
 
 interface Stats {
   total: number
   inbound: number
   outbound: number
-  missed: number
   customers: number
   todayCalls: number
-  todayMissed: number
 }
 
 const PhoneIcon    = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 8V5z" /></svg>
 const UsersIcon    = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
-const MissedIcon   = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
 const OffersIcon   = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" /></svg>
 const TodayIcon    = () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
 const ChevronRight = () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
@@ -45,7 +42,6 @@ function StatCard({ icon, label, value, sub, color }: {
 function statusBadge(status: string) {
   const map: Record<string, string> = {
     completed: 'bg-emerald-500/20 text-emerald-400',
-    missed:    'bg-red-500/20 text-red-400',
     'in-progress': 'bg-yellow-500/20 text-yellow-400',
   }
   return map[status] ?? 'bg-gray-500/20 text-gray-400'
@@ -87,11 +83,25 @@ function timeAgo(dateStr: string | null) {
   return `${Math.floor(h / 24)}d ago`
 }
 
+function localDateKey(date = new Date()) {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function isSameLocalDay(dateStr: string | null, dateKey: string) {
+  if (!dateStr) return false
+  const parsed = new Date(dateStr)
+  if (Number.isNaN(parsed.getTime())) return dateStr.startsWith(dateKey)
+  return localDateKey(parsed) === dateKey
+}
+
 export default function Dashboard() {
   const navigate = useNavigate()
   const { t, i18n } = useTranslation()
-  const [stats, setStats] = useState<Stats>({ total: 0, inbound: 0, outbound: 0, missed: 0, customers: 0, todayCalls: 0, todayMissed: 0 })
-  const [recentCalls, setRecentCalls] = useState<Call[]>([])
+  const [stats, setStats] = useState<Stats>({ total: 0, inbound: 0, outbound: 0, customers: 0, todayCalls: 0 })
+  const [todayCallSummaries, setTodayCallSummaries] = useState<Call[]>([])
   const [todayJobs, setTodayJobs] = useState<Job[]>([])
   const [pendingOffers, setPendingOffers] = useState<Offer[]>([])
   const [loading, setLoading] = useState(true)
@@ -101,21 +111,22 @@ export default function Dashboard() {
 
   const load = useCallback(async () => {
     try {
-      const today = new Date().toISOString().slice(0, 10)
+      const today = localDateKey()
 
-      const [callStats, calls, customers, settings, allJobs] = await Promise.all([
-        getCallStats().catch(() => ({ total: 0, inbound: 0, outbound: 0, missed: 0 })),
+      const [calls, customers, settings, allJobs] = await Promise.all([
         getCalls(200).catch(() => [] as Call[]),
         getCustomers().catch(() => []),
         db.get('SELECT company_name, owner_name, hidden_tabs FROM settings WHERE id = ?', ['main']).catch(() => undefined) as Promise<{ company_name: string; owner_name: string; hidden_tabs: string | null } | undefined>,
         getJobs().catch(() => [] as Job[]),
       ])
 
-      const todayCalls  = calls.filter(c => c.started_at?.startsWith(today)).length
-      const todayMissed = calls.filter(c => c.started_at?.startsWith(today) && c.status === 'missed').length
+      const callsToday = calls.filter(c => isSameLocalDay(c.started_at, today))
+      const conversationsToday = callsToday.filter(c => c.status !== 'missed')
+      const inboundToday = conversationsToday.filter(c => c.direction === 'inbound').length
+      const outboundToday = conversationsToday.filter(c => c.direction === 'outbound').length
 
-      setStats({ ...callStats, customers: customers.length, todayCalls, todayMissed })
-      setRecentCalls(calls.slice(0, 8))
+      setStats({ total: calls.length, inbound: inboundToday, outbound: outboundToday, customers: customers.length, todayCalls: conversationsToday.length })
+      setTodayCallSummaries(conversationsToday.slice(0, 8))
       setTodayJobs(allJobs.filter(j => j.scheduled_date === today && j.status !== 'cancelled'))
       setCompanyName(settings?.company_name ?? 'Ergoflow')
       setOwnerName(settings?.owner_name ?? '')
@@ -168,10 +179,9 @@ export default function Dashboard() {
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-        {!hidden('calls') && <StatCard icon={<TodayIcon />}  label={t('dashboard.callsToday')}  value={stats.todayCalls}  sub={stats.todayMissed > 0 ? `${stats.todayMissed} ${t('dashboard.missed')}` : undefined} color="bg-brand-500/20 text-brand-400" />}
+        {!hidden('calls') && <StatCard icon={<TodayIcon />}  label={t('dashboard.callsToday')}  value={stats.todayCalls}  color="bg-brand-500/20 text-brand-400" />}
         {!hidden('calls') && <StatCard icon={<PhoneIcon />}  label={t('dashboard.totalCalls')}  value={stats.total}        color="bg-blue-500/20 text-blue-400" />}
         {!hidden('customers') && <StatCard icon={<UsersIcon />}  label={t('dashboard.customers')}   value={stats.customers}    color="bg-purple-500/20 text-purple-400" />}
-        {!hidden('calls') && <StatCard icon={<MissedIcon />} label={t('dashboard.missedCalls')} value={stats.missed}       color="bg-red-500/20 text-red-400" />}
         {!hidden('offers') && <StatCard icon={<OffersIcon />} label={t('dashboard.pendingOffers')} value={pendingOffers.length} color="bg-amber-500/20 text-amber-400" />}
       </div>
 
@@ -234,12 +244,12 @@ export default function Dashboard() {
         )}
       </div>}
 
-      {/* Recent calls + quick actions */}
+      {/* Today's call summaries + quick actions */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Recent calls */}
+        {/* Today's call summaries */}
         {!hidden('calls') && <div className="lg:col-span-2 bg-surface-800 rounded-xl overflow-hidden">
           <div className="flex items-center justify-between px-5 py-4 border-b border-surface-600">
-            <h2 className="text-sm font-semibold text-white">{t('dashboard.recentCalls')}</h2>
+            <h2 className="text-sm font-semibold text-white">{t('dashboard.todayCallSummaries')}</h2>
             <button
               onClick={() => navigate('/calls')}
               className="flex items-center gap-1 text-xs text-brand-400 hover:text-brand-300 transition-colors"
@@ -248,19 +258,24 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {recentCalls.length === 0 ? (
-            <div className="px-5 py-10 text-center text-gray-500 text-sm">{t('dashboard.noCallsYet')}</div>
+          {todayCallSummaries.length === 0 ? (
+            <div className="px-5 py-10 text-center text-gray-500 text-sm">{t('dashboard.noCallsToday')}</div>
           ) : (
             <div className="divide-y divide-surface-600">
-              {recentCalls.map(call => (
-                <div key={call.id} className="flex items-center gap-3 px-5 py-3 hover:bg-surface-700 cursor-pointer transition-colors" onClick={() => navigate('/calls')}>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-white truncate">{call.customer_name ?? call.customer_phone ?? 'Unknown'}</p>
-                    <p className="text-xs text-gray-500">{timeAgo(call.started_at)} · {formatDuration(call.duration_seconds)}</p>
+              {todayCallSummaries.map(call => (
+                <div key={call.id} className="px-5 py-3 hover:bg-surface-700 cursor-pointer transition-colors" onClick={() => navigate('/calls')}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white truncate">{call.customer_name ?? call.customer_phone ?? 'Unknown'}</p>
+                      <p className="text-xs text-gray-500">{timeAgo(call.started_at)} · {formatDuration(call.duration_seconds)}</p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium shrink-0 ${statusBadge(call.status)}`}>
+                      {call.status}
+                    </span>
                   </div>
-                  <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusBadge(call.status)}`}>
-                    {call.status}
-                  </span>
+                  <p className="text-xs text-gray-300 mt-2 line-clamp-2 leading-relaxed">
+                    {call.summary || t('dashboard.noCallSummary')}
+                  </p>
                 </div>
               ))}
             </div>

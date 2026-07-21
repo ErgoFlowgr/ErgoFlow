@@ -237,3 +237,9 @@ Short summary:
 - Restored Google Calendar-style range selection in the Jobs calendar by replacing mouse-only handlers with pointer handlers.
 - Added touch-safe drag tracking, pointer capture, current-cell detection via elementFromPoint, and touch-none/select-none styling so mobile swipes select dates instead of scrolling/text-selecting.
 - Verified with npm run build and npm run lint:security.
+
+2026-07-19 13:41 WEST - Dashboard daily call summaries
+Short summary:
+- Removed the missed-calls dashboard card and missed-call subcount from today's calls.
+- Changed the dashboard calls section to show only today's non-missed conversations with each call's summary.
+- Added Greek and English empty/summary labels and verified with npm run build and npm run lint:security.
