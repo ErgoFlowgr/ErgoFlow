@@ -335,8 +335,7 @@ export default function Chat() {
         video: {
           facingMode: { ideal: 'environment' },
           width: { ideal: 1280 },
-          height: { ideal: 720 },
-          advanced: [{ zoom: 2 } as MediaTrackConstraintSet]
+          height: { ideal: 720 }
         },
         audio: false
       })
@@ -345,12 +344,12 @@ export default function Chat() {
       const capabilities = track?.getCapabilities?.()
       if (capabilities && 'zoom' in capabilities) {
         const zoom = capabilities.zoom as { min?: number; max?: number; step?: number }
-        const normalRearLensZoom = Math.min(Math.max(zoom.min ?? 1, 2), zoom.max ?? 2)
+        const normalRearLensZoom = Math.min(Math.max(1, zoom.min ?? 1), zoom.max ?? 1)
         try {
           await track.applyConstraints({ advanced: [{ zoom: normalRearLensZoom } as MediaTrackConstraintSet] })
         } catch {
-          // Some Android browsers expose zoom capabilities but reject applying them.
-          // Keep the rear camera stream rather than blocking photo capture.
+          // Some Android WebViews expose zoom capabilities but reject applying them.
+          // Keep the normal rear camera stream rather than blocking photo capture.
         }
       }
 
@@ -807,7 +806,7 @@ export default function Chat() {
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
                   </svg>
-                  Αποστολή
+                  {t('chat.send')}
                 </button>
               </div>
             </div>

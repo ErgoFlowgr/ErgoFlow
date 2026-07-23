@@ -1,6 +1,6 @@
 {
   "name": "ergoflow",
-  "version": "0.8.17",
+  "version": "0.8.19",
   "description": "Ergoflow Craftsmen — CRM for craftsmen with AI assistant",
   "author": "ErgoFlow",
   "main": "dist-electron/main.js",

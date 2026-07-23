@@ -228,11 +228,11 @@ export default function SettingsPage() {
     if (!file) return
     setLogoError(null)
     if (!file.type.startsWith('image/')) {
-      setLogoError('Επιτρέπονται μόνο εικόνες (PNG, JPG)')
+      setLogoError(t('settings.logoImagesOnly'))
       return
     }
     if (file.size > 2 * 1024 * 1024) {
-      setLogoError('Το αρχείο υπερβαίνει τα 2MB')
+      setLogoError(t('settings.logoTooLarge'))
       return
     }
     const reader = new FileReader()
@@ -387,7 +387,7 @@ export default function SettingsPage() {
           <input key={inputKey} ref={companyNameRef} className="input" defaultValue={settings.company_name ?? ''} onInput={() => { isDirty.current = true }} />
         </Field>
         <Field label={t('settings.workType')}>
-          <input key={inputKey} ref={workTypeRef} className="input" defaultValue={settings.work_type ?? ''} onInput={() => { isDirty.current = true }} placeholder="π.χ. Υδραυλικός, Ηλεκτρολόγος, Ψύξη..." />
+          <input key={inputKey} ref={workTypeRef} className="input" defaultValue={settings.work_type ?? ''} onInput={() => { isDirty.current = true }} placeholder={t('settings.workTypePlaceholder')} />
         </Field>
         <Field label={t('settings.mobile')}>
           <input key={inputKey} ref={phoneRef} className="input" defaultValue={settings.phone ?? ''} onInput={() => { isDirty.current = true }} />
@@ -407,9 +407,9 @@ export default function SettingsPage() {
       </Section>
 
       {/* Subscription */}
-      <Section title="Συνδρομή">
+      <Section title={t('settings.subscription')}>
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-400">Πλάνο</span>
+          <span className="text-sm text-gray-400">{t('settings.plan')}</span>
           <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
             tier === 'pro'   ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
             tier === 'plus'  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
@@ -420,21 +420,21 @@ export default function SettingsPage() {
           </span>
         </div>
         <div className="flex items-center justify-between">
-          <span className="text-sm text-gray-400">Κατάσταση</span>
+          <span className="text-sm text-gray-400">{t('settings.status')}</span>
           <span className={`text-sm font-medium ${status === 'active' ? 'text-emerald-400' : 'text-yellow-400'}`}>
-            {status === 'active' ? 'Ενεργό' : status === 'expired' ? 'Ληγμένο' : status === 'cancelled' ? 'Ακυρωμένο' : 'Απαιτείται επαλήθευση'}
+            {status === 'active' ? t('settings.statusActive') : status === 'expired' ? t('settings.statusExpired') : status === 'cancelled' ? t('settings.statusCancelled') : t('settings.statusNeedsVerification')}
           </span>
         </div>
         {aiTrialActive && settings?.ai_trial_start && (
           <div className="flex items-center justify-between">
-            <span className="text-sm text-gray-400">AI δοκιμή</span>
+            <span className="text-sm text-gray-400">{t('settings.aiTrial')}</span>
             <span className="text-sm text-brand-300">
-              {Math.max(0, 14 - Math.floor((Date.now() - new Date(settings.ai_trial_start).getTime()) / 86400000))} ημέρες απομένουν
+              {t('settings.daysRemaining', { count: Math.max(0, 14 - Math.floor((Date.now() - new Date(settings.ai_trial_start).getTime()) / 86400000)) })}
             </span>
           </div>
         )}
         {aiTrialUsed && !aiTrialActive && (
-          <p className="text-xs text-gray-500">Η δοκιμή AI έχει λήξει</p>
+          <p className="text-xs text-gray-500">{t('settings.aiTrialExpired')}</p>
         )}
         <div className="flex items-center justify-between pt-2 border-t border-surface-600 gap-3">
           <div className="flex gap-2">
@@ -443,14 +443,14 @@ export default function SettingsPage() {
                 className="btn-primary text-sm px-4 py-2"
                 onClick={() => requestUpgrade()}
               >
-                Αναβάθμιση πλάνου
+                {t('settings.upgradePlan')}
               </button>
             ) : (
               <button
                 className="btn-secondary text-sm px-4 py-2"
                 onClick={() => openExternal('https://billing.stripe.com/PLACEHOLDER')}
               >
-                Διαχείριση συνδρομής
+                {t('settings.manageSubscription')}
               </button>
             )}
           </div>
@@ -462,12 +462,12 @@ export default function SettingsPage() {
             {licenseChecking ? (
               <span className="flex items-center gap-1.5">
                 <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
-                Έλεγχος...
+                {t('settings.checking')}
               </span>
             ) : licenseChecked ? (
-              <span className="text-emerald-400">✓ Ελέγχθηκε</span>
+              <span className="text-emerald-400">✓ {t('settings.checked')}</span>
             ) : (
-              'Ανανέωση άδειας'
+              t('settings.refreshLicense')
             )}
           </button>
         </div>
@@ -475,16 +475,16 @@ export default function SettingsPage() {
 
       {/* AI Phone Assistant (Pro only) */}
       {isPro && (
-        <Section title="AI Τηλεφωνικός Βοηθός">
-          <Field label="Αριθμός Gianna">
+        <Section title={t('settings.aiPhoneAssistant')}>
+          <Field label={t('settings.giannaNumber')}>
             <div className="input bg-surface-700 text-gray-300 select-all font-mono">
-              {vapiPhoneNumber ?? '— Εκκρεμεί ανάθεση αριθμού'}
+              {vapiPhoneNumber ?? t('settings.numberAssignmentPending')}
             </div>
             <p className="text-xs text-gray-500 mt-1">
-              Δώσε αυτόν τον αριθμό στους πελάτες σου. Η Gianna απαντά, καταγράφει και συνοψίζει κάθε κλήση.
+              {t('settings.giannaNumberHint')}
             </p>
           </Field>
-          <Field label="Λεπτά που χρησιμοποιήθηκαν αυτόν τον μήνα">
+          <Field label={t('settings.minutesUsedThisMonth')}>
             <div className="flex items-center gap-3">
               <div className="flex-1 bg-surface-700 rounded-full h-2">
                 <div
@@ -493,14 +493,14 @@ export default function SettingsPage() {
                 />
               </div>
               <span className={`text-sm font-medium ${vapiMinutesUsed >= 100 ? 'text-red-400' : vapiMinutesUsed >= 80 ? 'text-yellow-400' : 'text-gray-300'}`}>
-                {vapiMinutesUsed} / 100 λεπτά
+                {t('settings.minutesUsage', { used: vapiMinutesUsed, total: 100 })}
               </span>
             </div>
             {vapiMinutesUsed >= 100 && (
-              <p className="text-xs text-red-400 mt-1">Εξαντλήθηκαν τα λεπτά σου. Αγόρασε επιπλέον λεπτά για να συνεχίσει η Gianna.</p>
+              <p className="text-xs text-red-400 mt-1">{t('settings.minutesExhausted')}</p>
             )}
             {vapiMinutesUsed >= 80 && vapiMinutesUsed < 100 && (
-              <p className="text-xs text-yellow-400 mt-1">Πλησιάζεις το όριο. Απομένουν {100 - vapiMinutesUsed} λεπτά.</p>
+              <p className="text-xs text-yellow-400 mt-1">{t('settings.minutesNearLimit', { count: 100 - vapiMinutesUsed })}</p>
             )}
           </Field>
         </Section>
@@ -563,7 +563,7 @@ export default function SettingsPage() {
         </div>
         <div className="flex gap-2 items-end">
           <div className="flex-1">
-            <input className="input" placeholder={i18n.language === 'en' ? 'Category name' : 'Όνομα κατηγορίας'} value={newCat} onChange={e => setNewCat(e.target.value)} />
+            <input className="input" placeholder={t('settings.categoryNamePlaceholder')} value={newCat} onChange={e => setNewCat(e.target.value)} />
           </div>
           <input type="color" value={newCatColor} onChange={e => setNewCatColor(e.target.value)} className="h-9 w-9 rounded cursor-pointer bg-transparent border-0" />
           <button className="btn-secondary whitespace-nowrap" onClick={addCategory}>{t('settings.addCategory')}</button>
@@ -573,11 +573,11 @@ export default function SettingsPage() {
       {/* Ηλεκτρονική Τιμολόγηση (Bratnet) */}
       <Section title={t('settings.einvoicing')}>
         <p className="text-xs text-gray-500">
-          Συνδεθείτε με το σύστημα ηλεκτρονικής τιμολόγησης Bratnet για αυτόματη υποβολή τιμολογίων και απόδοση ΜΑΡΚ.
+          {t('settings.einvoicingHint')}
         </p>
         {/* ΑΦΜ is shared with the e-invoicing provider */}
-        <Field label="ΑΦΜ Εταιρείας">
-          <input key={inputKey} ref={vatRef} className="input" defaultValue={settings.company_vat ?? ''} onInput={() => { isDirty.current = true }} placeholder="π.χ. 123456789" />
+        <Field label={t('settings.companyVat')}>
+          <input key={inputKey} ref={vatRef} className="input" defaultValue={settings.company_vat ?? ''} onInput={() => { isDirty.current = true }} placeholder={t('settings.companyVatPlaceholder')} />
         </Field>
         <Field label={t('settings.bratnetUsername')}>
           <input key={inputKey} ref={bratnetUsernameRef} className="input" defaultValue={settings.bratnet_username ?? ''} onInput={() => { isDirty.current = true }} placeholder="Bratnet username" />
@@ -591,17 +591,17 @@ export default function SettingsPage() {
       </Section>
 
       {/* Cloud Sync */}
-      <Section title="Συγχρονισμός">
+      <Section title={t('settings.sync')}>
         <p className="text-xs text-gray-500 -mt-1 mb-3">
-          Συγχρονίζει τα δεδομένα σας με τους servers Ergoflow. Η εφαρμογή λειτουργεί κανονικά χωρίς internet — ο συγχρονισμός χρησιμεύει για backup και χρήση σε πολλές συσκευές.
+          {t('settings.syncHint')}
         </p>
         <label className="flex items-center justify-between py-1 cursor-pointer">
           <div>
-            <span className="text-sm text-gray-300">Αυτόματος συγχρονισμός</span>
+            <span className="text-sm text-gray-300">{t('settings.autoSync')}</span>
             <p className="text-xs text-gray-500 mt-0.5">
               {settings.sync_enabled
-                ? 'Τα δεδομένα συγχρονίζονται αυτόματα με τους servers Ergoflow'
-                : 'Ανενεργό — τα δεδομένα υπάρχουν μόνο σε αυτή τη συσκευή'}
+                ? t('settings.autoSyncEnabled')
+                : t('settings.autoSyncDisabled')}
             </p>
           </div>
           <input
@@ -614,16 +614,16 @@ export default function SettingsPage() {
         {!settings.sync_enabled && (
           <div className="flex items-start gap-2 px-3 py-2 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
             <span className="text-yellow-500 text-sm mt-0.5">⚠</span>
-            <p className="text-xs text-yellow-400">Χωρίς συγχρονισμό. Αν χαθεί ή χαλάσει η συσκευή, τα δεδομένα δεν ανακτώνται.</p>
+            <p className="text-xs text-yellow-400">{t('settings.syncDisabledWarning')}</p>
           </div>
         )}
         <div className="flex items-center justify-between pt-2 border-t border-surface-600">
           <div>
-            <p className="text-sm text-gray-300">Τελευταίος συγχρονισμός</p>
+            <p className="text-sm text-gray-300">{t('settings.lastSync')}</p>
             <p className="text-xs text-gray-500 mt-0.5">
               {settings.sync_enabled
-                ? (lastSyncAt ? new Date(lastSyncAt).toLocaleString('el-GR') : 'Δεν έχει γίνει ακόμη')
-                : 'Ο συγχρονισμός είναι ανενεργός'}
+                ? (lastSyncAt ? new Date(lastSyncAt).toLocaleString(i18n.language === 'el' ? 'el-GR' : 'en-GB') : t('settings.neverSynced'))
+                : t('settings.syncIsDisabled')}
             </p>
           </div>
           <button
@@ -636,17 +636,17 @@ export default function SettingsPage() {
             }`}
             disabled={!settings.sync_enabled || syncStatus === 'syncing'}
             onClick={handleSyncNow}
-            title={!settings.sync_enabled ? 'Ενεργοποιήστε πρώτα τον συγχρονισμό' : undefined}
+            title={!settings.sync_enabled ? t('settings.enableSyncFirst') : undefined}
           >
-            {syncStatus === 'syncing' ? 'Συγχρονισμός...' :
-             syncStatus === 'ok' ? '✓ Ολοκληρώθηκε' :
-             syncStatus === 'error' ? '✗ Σφάλμα' :
-             'Συγχρονισμός τώρα'}
+            {syncStatus === 'syncing' ? t('settings.syncing') :
+             syncStatus === 'ok' ? `✓ ${t('settings.syncComplete')}` :
+             syncStatus === 'error' ? `✗ ${t('settings.syncError')}` :
+             t('settings.syncNow')}
           </button>
         </div>
         {syncError && (
           <div className="mt-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300 break-words">
-            Sync σφάλμα: {syncError}
+            {t('settings.syncErrorPrefix')}: {syncError}
           </div>
         )}
         {platform.isMobile && (
@@ -661,7 +661,7 @@ export default function SettingsPage() {
                 window.location.reload()
               }}
             >
-              Αποσύνδεση
+              {t('settings.signOut')}
             </button>
           </div>
         )}
@@ -674,7 +674,7 @@ export default function SettingsPage() {
             className={`min-w-24 justify-center px-4 py-2 rounded-lg font-medium transition-colors ${saveError ? 'bg-red-500 text-white' : 'btn-primary'}`}
             onClick={save}
           >
-            {saved ? `✓ ${t('settings.saved')}` : saveError ? '✗ Σφάλμα' : t('settings.save')}
+            {saved ? `✓ ${t('settings.saved')}` : saveError ? `✗ ${t('common.error')}` : t('settings.save')}
           </button>
         </div>
       ) : (
@@ -683,7 +683,7 @@ export default function SettingsPage() {
             className={`min-w-24 justify-center px-4 py-2 rounded-lg font-medium transition-colors ${saveError ? 'bg-red-500 text-white' : 'btn-primary'}`}
             onClick={save}
           >
-            {saved ? `✓ ${t('settings.saved')}` : saveError ? '✗ Σφάλμα' : t('settings.save')}
+            {saved ? `✓ ${t('settings.saved')}` : saveError ? `✗ ${t('common.error')}` : t('settings.save')}
           </button>
         </div>
       )}

@@ -1,0 +1,11 @@
+ErgoFlow Android 0.8.19 (99)
+
+Black-screen startup hotfix:
+- Added explicit Android splash-screen handoff to the real app theme.
+- MainActivity now forces the no-action-bar app content theme before Capacitor startup.
+- Extended Android startup verification so this regression is caught during future builds.
+
+Also keeps the previous 0.8.18 fixes:
+- English locale AI assistant/mobile labels use proper translations.
+- AI Product Assistant camera requests the normal rear/environment camera.
+- Removed forced/cropped camera zoom behavior.

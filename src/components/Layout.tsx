@@ -105,7 +105,7 @@ function MobileLayout({ children, allMobileItems }: { children: React.ReactNode;
                 }`}
               >
                 <MoreIcon />
-                <span className="text-[10px] font-medium leading-none">Περισσότερα</span>
+                <span className="text-[10px] font-medium leading-none">{t('nav.more')}</span>
               </button>
 
               {/* Popup menu — opens upward */}
