@@ -197,6 +197,29 @@ export async function getCalls(limit = 200): Promise<Call[]> {
     [limit]
   ) as Promise<Call[]>
 }
+export async function upsertCall(call: Partial<Call> & { id?: string }): Promise<string> {
+  const id = call.id ?? uuid()
+  await db.run(
+    `INSERT INTO calls (id, vapi_call_id, customer_id, customer_phone, customer_name, direction, status, category_id, duration_seconds, transcript, summary, recording_url, started_at, ended_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       vapi_call_id=excluded.vapi_call_id, customer_id=excluded.customer_id,
+       customer_phone=excluded.customer_phone, customer_name=excluded.customer_name,
+       direction=excluded.direction, status=excluded.status, category_id=excluded.category_id,
+       duration_seconds=excluded.duration_seconds, transcript=excluded.transcript,
+       summary=excluded.summary, recording_url=excluded.recording_url,
+       started_at=excluded.started_at, ended_at=excluded.ended_at,
+       updated_at=datetime('now'), synced=0`,
+    [id, call.vapi_call_id ?? null, call.customer_id ?? null, call.customer_phone ?? null,
+     call.customer_name ?? null, call.direction ?? 'outbound', call.status ?? 'queued',
+     call.category_id ?? null, call.duration_seconds ?? null, call.transcript ?? null,
+     call.summary ?? null, call.recording_url ?? null, call.started_at ?? new Date().toISOString(),
+     call.ended_at ?? null]
+  )
+  await queueSync('calls', id, 'upsert')
+  return id
+}
+
 
 export async function deleteCall(id: string): Promise<void> {
   await db.run('DELETE FROM calls WHERE id = ?', [id])

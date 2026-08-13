@@ -3,6 +3,65 @@ Generated/updated: 2026-05-23 17:48:13 GTBST
 Project: D:\Projects\ErgoFlow\Claude\crm-app
 Scope: Short operational history reconstructed from git log, session notes, existing project state, and verified project files. This is a workshop record, not a formal release note.
 
+2026-08-11 22:59 WEST - Offer and invoice email handoff
+Short summary:
+- Added Email action buttons to offers and invoices alongside the existing WhatsApp/Viber buttons.
+- Email uses the linked customer's saved email address and opens the user's default desktop/mobile mail handler with recipient, subject, and body prefilled.
+- Left WhatsApp/Viber behavior unchanged; if the linked customer has no email, the app now warns instead of opening an empty mail draft.
+
+2026-08-11 13:47 WEST - Bratnet payload fixes from provider files
+Short summary:
+- Updated Bratnet payload generation to use service invoice type 2.1 and service receipt type 11.2 instead of defaulting invoices to goods invoice type 1.1.
+- Changed payment methods to Bratnet's documented paymentMethods.paymentMethodDetails shape and added line-level incomeClassification values matching the Bratnet Postman service examples.
+- Tightened VAT category handling so unsupported VAT percentages fail locally before any Bratnet submission attempt.
+- Routed Electron myDATA submission through the shared Bratnet payload builder to stop desktop and shared code drifting apart.
+- Added npm run test:bratnet and verified npm run test:bratnet, npm run build:electron, and npm run build pass without needing Bratnet API credentials.
+
+2026-08-05 22:00 WEST - Desktop backup/restore controls
+Short summary:
+- Added Diagnostics/About controls to create a local ErgoFlow desktop backup, restore from a backup file, and open the local data folder.
+- Added Electron IPC backup handlers that use SQLite backup APIs, write a timestamped .ergoflow-backup manifest, verify restore integrity, create a safety backup before restore, replace the active local database, and reload the app.
+- Backup export and restore import now omit/redact sensitive settings columns such as API keys, tokens, passwords, credentials, usernames, user IDs, secrets, and connection strings.
+- Verified npx tsc --noEmit --pretty false, npm run build:electron -- --pretty false, npm run lint:security, and npm run build pass after the changes.
+
+2026-08-05 21:41 WEST - AI Helper backend usage limits
+Short summary:
+- Left AI Caller untouched pending controlled test calls and started on the other production-hardening items.
+- Added Supabase AI Helper usage tables, per-user monthly counters, read-only RLS policies, service-role write grants, and RPC helpers for atomic action consumption plus token totals.
+- Updated claude-proxy to enforce active AI subscription/trial limits server-side before Anthropic calls, return 429 ai_limit_reached responses, expose usage headers, and record successful AI usage events/token totals.
+- Updated the AI client error handling so users see clear upgrade/limit messages instead of a raw Claude proxy error.
+- Verified npx tsc --noEmit --pretty false, npm run lint:security, and npm run build pass after the changes.
+
+2026-08-05 21:18 WEST - AI Helper approvals, AI Caller loop, desktop diagnostics
+Short summary:
+- Added AI Helper review cards for record-writing actions. Customer/job/offer/invoice/catalog writes now wait for explicit Approve/Reject and append an audit marker to the saved chat message before any database write.
+- Added first-class AI draft invoice creation support through the same approval flow; generated invoices stay draft until reviewed.
+- Reworked the AI Caller page from webhook-only/coming-soon into an operational loop: visible phone/minute status, outbound-call form, VAPI status sync button, local outbound call row creation, and call detail actions to create/update a customer or follow-up job from call summaries.
+- Added Supabase Edge Functions create-vapi-call and vapi-sync for authenticated outbound call creation and VAPI status reconciliation.
+- Added a desktop Diagnostics/About page showing app version, data path/database, sync enabled/queue count, local row counts, subscription status, VAPI minutes/phone number, and update/release-feed notes.
+- Verified npx tsc --noEmit --pretty false, npm run lint:security, and npm run build pass after the changes.
+
+2026-08-02 20:49 WEST - Android tester build 0.8.20 preparation
+Short summary:
+- Re-checked the AI-created offer valid-until pipeline: AI action expiry_date extraction, Chat offer creation persistence, expiry reminder scheduling, chat confirmation, and DB upsert mapping.
+- Bumped ErgoFlow package version to 0.8.20 and Android versionCode/versionName to 100/0.8.20 for the next Firebase App Distribution tester build.
+- Verified web build, security lint, i18n JSON parse, Android startup script, Capacitor sync, and Android debug APK build.
+- Added info.ergoflow@gmail.com to the Firebase App Distribution testers group and distributed Android 0.8.20 versionCode 100 through Firebase.
+
+2026-08-02 20:29 WEST - Android post-login black screen fix
+Short summary:
+- Paired with the Samsung phone over Android Wi-Fi debugging and inspected the installed ErgoFlow WebView through DevTools/CDP.
+- Confirmed the black screen was a blank React root caused by an uncaught mobile layout runtime error: ReferenceError: t is not defined.
+- Fixed MobileLayout to initialize the i18n translation helper before rendering the mobile More navigation label.
+- Verified npm run build, npm run lint:security, Capacitor Android sync, Android debug APK build, debug install to the Wi-Fi device, relaunch, screenshot, and DevTools DOM inspection.
+
+2026-08-02 14:39 WEST - AI offer expiration date fix
+Short summary:
+- Added expiry_date support to AI create-offer action parsing so "valid until" / expiration date requests are captured as YYYY-MM-DD.
+- Stored the AI action expiry_date into the offer expiry_date field when creating offers from Chat.
+- Scheduled/cleared offer expiry reminders from the AI-created offer path and included the valid-until date in the chat confirmation.
+- Verified the change with npm run build.
+
 2026-07-23 14:00 WEST - Settings English locale cleanup
 Short summary:
 - Replaced hardcoded Greek text in Settings subscription, AI phone assistant, e-invoicing, sync, logo validation, work type placeholder, category placeholder, and save-error UI with i18n translation keys.
@@ -270,3 +329,29 @@ Short summary:
 - Added explicit Android splash-to-app theme handoff via postSplashScreenTheme.
 - MainActivity now forces the real no-action-bar app theme before Capacitor BridgeActivity startup to avoid remaining on a blank dark launch screen.
 - Extended Android startup verification script to catch missing splash handoff in future builds.
+
+2026-08-02 22:51 WEST - Removed Claude API key field from onboarding
+- Removed the Claude API Key label and password input from the AI choice onboarding step.
+- Stopped onboarding from saving a Claude API key during completion.
+- Verification: `npm run build` passed; `npm run lint:security` passed.
+
+2026-08-02 23:00 WEST - Firebase Android tester build 0.8.21
+- Bumped ErgoFlow package version to 0.8.21 and Android versionCode/versionName to 101/0.8.21.
+- Built the Android debug APK after web build, security lint, i18n JSON parsing, and Capacitor sync passed.
+- Uploaded/distributed Firebase App Distribution release 0.8.21 (101) to the testers group; Firebase confirmed 2 testers in the group.
+- Change included: onboarding AI-choice screen no longer shows or saves a Claude API key field.
+
+## 2026-08-04 17:37 WEST — Invoice preview item-column alignment
+
+- Tightened invoice print-preview item table columns with fixed table layout and explicit column widths.
+- Matched header/body alignment: description left, quantity centered, unit price and amount right-aligned.
+- Goal: keep the mobile preview item columns visually straight.
+- Verification: `npm run build` passed; `npm run lint:security` passed.
+
+## 2026-08-04 17:46 WEST — Firebase Android tester build 0.8.22
+
+- Bumped ErgoFlow package version to 0.8.22 and Android versionCode/versionName to 102/0.8.22.
+- Built and synced Android debug APK containing the invoice preview item-column alignment fix.
+- Uploaded/distributed Firebase App Distribution release 0.8.22 (102) to the testers group.
+- Verification: `npm run build`, `npm run lint:security`, i18n JSON parse, `npx cap sync android`, and `./gradlew assembleDebug` passed.
+- Artifact: `android/app/build/outputs/apk/debug/app-debug.apk` SHA256 f566648e28da96397badfa31a7fc49eace20ade48332f81d95a087e1cec4a710.

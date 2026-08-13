@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getChatHistory, clearChatHistory, getDocuments, getSettings, getCustomers, insertChatMessage, updateChatMessage, upsertJob, upsertOffer, upsertCustomer, getNextOfferNumber, upsertInventoryItem, getInventory, uuid, type ChatMessage, type Document, type Customer } from '../../lib/db'
+import { getChatHistory, clearChatHistory, getDocuments, getSettings, getCustomers, insertChatMessage, updateChatMessage, upsertJob, upsertOffer, upsertCustomer, getNextOfferNumber, getNextInvoiceNumber, upsertInvoice, upsertInventoryItem, getInventory, uuid, type ChatMessage, type Document, type Customer } from '../../lib/db'
 import { chatWithActions, getAIConfig, type AIAction } from '../../lib/ai'
 import { processPDF } from '../../lib/pdf'
 import { platform } from '../../lib/platform'
+import { scheduleOfferExpiryReminders } from '../../lib/notifications'
 import { activateAITrial } from '../../lib/license'
 import { useSubscription } from '../../App'
 
@@ -33,7 +34,7 @@ declare global {
 interface ActionCard {
   msgId: string
   action: AIAction
-  status: 'pending' | 'done' | 'error'
+  status: 'pending' | 'awaiting_approval' | 'approved' | 'rejected' | 'done' | 'error'
   result?: string
 }
 
@@ -86,9 +87,106 @@ export default function Chat() {
     })
   }
 
+  const writeActionTypes = new Set<AIAction['type']>([
+    'create_customer',
+    'create_job',
+    'create_offer',
+    'create_invoice',
+    'add_inventory_item',
+    'update_inventory_item',
+    'update_job',
+  ])
+
+  const actionLabel = (action: AIAction): string => {
+    switch (action.type) {
+      case 'create_customer': return `Create customer: ${action.contact_name ?? '—'}`
+      case 'create_job': return `Create job: ${action.title ?? '—'}`
+      case 'create_offer': return `Create offer for ${action.customer_name ?? '—'}`
+      case 'create_invoice': return `Create draft invoice for ${action.customer_name ?? '—'}`
+      case 'add_inventory_item': return `Add catalog item: ${action.item_name ?? '—'}`
+      case 'update_inventory_item': return `Update catalog item: ${action.item_code ?? action.item_name ?? '—'}`
+      case 'update_job': return `Update job: ${action.job_id ?? '—'}`
+      case 'download_pdfs': return `Download ${action.urls?.length ?? 0} PDF(s)`
+      case 'scrape_page': return `Scan page: ${action.scrape_url ?? '—'}`
+      default: return action.type
+    }
+  }
+
+  const actionPreview = (action: AIAction): string[] => {
+    const lines: string[] = []
+    if (action.customer_name) lines.push(`Customer: ${action.customer_name}`)
+    if (action.contact_phone) lines.push(`Phone: ${action.contact_phone}`)
+    if (action.contact_email) lines.push(`Email: ${action.contact_email}`)
+    if (action.title) lines.push(`Title: ${action.title}`)
+    if (action.scheduled_date) lines.push(`Date: ${action.scheduled_date}`)
+    if (action.description) lines.push(`Description: ${action.description}`)
+    if (action.notes) lines.push(`Notes: ${action.notes}`)
+    if (action.offer_items?.length) lines.push(`Items: ${action.offer_items.map(i => `${i.description} × ${i.quantity} @ ${i.unit_price}€`).join('; ')}`)
+    if (action.invoice_items?.length) lines.push(`Items: ${action.invoice_items.map(i => `${i.description} × ${i.quantity} @ ${i.unit_price}€`).join('; ')}`)
+    if (action.item_name) lines.push(`Item: ${action.item_name}`)
+    if (typeof action.item_price === 'number') lines.push(`Price: ${action.item_price.toFixed(2)} €`)
+    if (typeof action.tax_rate === 'number') lines.push(`VAT: ${action.tax_rate}%`)
+    return lines.slice(0, 8)
+  }
+
+  const markActionAudit = async (msgId: string, marker: string) => {
+    setMessages(prev => {
+      const updated = prev.map(m => m.id === msgId ? { ...m, content: m.content + `
+
+${marker}` } : m)
+      const msg = updated.find(m => m.id === msgId)
+      if (msg) updateChatMessage(msgId, msg.content)
+      return updated
+    })
+  }
+
+  const rejectAction = async (msgId: string) => {
+    setActionCards(prev => prev.map(c => c.msgId === msgId ? { ...c, status: 'rejected', result: 'Rejected by user — no database write was made.' } : c))
+    await markActionAudit(msgId, '❌ AI action rejected by user. No database write was made.')
+  }
+
+  const approveAction = async (card: ActionCard) => {
+    setActionCards(prev => prev.map(c => c.msgId === card.msgId ? { ...c, status: 'approved', result: 'Approved by user. Writing record...' } : c))
+    await markActionAudit(card.msgId, `🛡️ AI action approved by user: ${actionLabel(card.action)}`)
+    await executeAction(card.action, card.msgId)
+  }
+
   const executeAction = async (action: AIAction, msgId: string) => {
     try {
-      if (action.type === 'create_offer' && action.offer_items?.length) {
+      if (action.type === 'create_invoice' && action.invoice_items?.length) {
+        const num = await getNextInvoiceNumber()
+        const items = action.invoice_items.map(it => ({
+          id: uuid(),
+          description: it.description,
+          quantity: it.quantity,
+          unit_price: it.unit_price,
+          total: it.quantity * it.unit_price,
+          sort_order: 0,
+        }))
+        const matchedCustomer = customers.find(c =>
+          (action.customer_id && c.id === action.customer_id) ||
+          (action.customer_name && c.name.toLowerCase() === action.customer_name.toLowerCase())
+        )
+        const customerAddress = matchedCustomer
+          ? [matchedCustomer.address, matchedCustomer.postal_code, matchedCustomer.city].filter(Boolean).join(', ')
+          : null
+        const customerName = action.customer_name ?? matchedCustomer?.name ?? null
+        await upsertInvoice({
+          number: num,
+          document_type: action.document_type ?? 'invoice',
+          customer_id: action.customer_id ?? matchedCustomer?.id ?? null,
+          customer_name: customerName,
+          customer_address: customerAddress,
+          status: 'draft',
+          issue_date: new Date().toISOString().slice(0, 10),
+          due_date: action.due_date && action.due_date !== 'null' ? action.due_date : null,
+          tax_rate: action.tax_rate ?? 24,
+          notes: action.notes ?? null,
+        }, items)
+        const total = items.reduce((s, it) => s + it.total, 0)
+        await completeAction(msgId, `Draft invoice ${num} created for ${customerName ?? '—'} · ${total.toFixed(2)} €`)
+
+      } else if (action.type === 'create_offer' && action.offer_items?.length) {
         const num = await getNextOfferNumber()
         const items = action.offer_items.map(it => ({
           id: uuid(),
@@ -106,18 +204,29 @@ export default function Chat() {
         const customerAddress = matchedCustomer
           ? [matchedCustomer.address, matchedCustomer.postal_code, matchedCustomer.city].filter(Boolean).join(', ')
           : null
-        await upsertOffer({
+        const expiryDate = action.expiry_date && action.expiry_date !== 'null' ? action.expiry_date : null
+        const customerName = action.customer_name ?? matchedCustomer?.name ?? null
+        const offerId = await upsertOffer({
           number: num,
           customer_id: action.customer_id ?? matchedCustomer?.id ?? null,
-          customer_name: action.customer_name ?? null,
+          customer_name: customerName,
           customer_address: customerAddress,
           status: 'pending',
           issue_date: new Date().toISOString().slice(0, 10),
+          expiry_date: expiryDate,
           tax_rate: action.tax_rate ?? 24,
           notes: `Includes VAT at ${action.tax_rate ?? 24}% / Συμπεριλαμβάνεται ΦΠΑ ${action.tax_rate ?? 24}%`,
         }, items)
+        await scheduleOfferExpiryReminders({
+          id: offerId,
+          title: num,
+          customerName,
+          expiryDate,
+          status: 'pending',
+        })
         const total = items.reduce((s, it) => s + it.total, 0)
-        await completeAction(msgId, `Offer ${num} created for ${action.customer_name ?? '—'} · ${total.toFixed(2)} €`)
+        const expiryText = expiryDate ? ` · valid until ${expiryDate}` : ''
+        await completeAction(msgId, `Offer ${num} created for ${customerName ?? '—'} · ${total.toFixed(2)} €${expiryText}`)
 
       } else if (action.type === 'add_inventory_item' && action.item_name) {
         await upsertInventoryItem({
@@ -290,9 +399,14 @@ export default function Chat() {
       await insertChatMessage({ id: assistantMsg.id, role: 'assistant', content: fullReply })
 
       if (action) {
-        const card: ActionCard = { msgId: assistantId, action, status: 'pending' }
+        const requiresApproval = writeActionTypes.has(action.type)
+        const card: ActionCard = { msgId: assistantId, action, status: requiresApproval ? 'awaiting_approval' : 'pending' }
         setActionCards(prev => [...prev, card])
-        setTimeout(() => executeAction(action, assistantId), 500)
+        if (requiresApproval) {
+          await markActionAudit(assistantId, `🛡️ AI proposed action awaiting approval: ${actionLabel(action)}`)
+        } else {
+          setTimeout(() => executeAction(action, assistantId), 500)
+        }
       }
     } catch (err) {
       const errMsg: ChatMessage = { id: uuid(), role: 'assistant', content: `Error: ${String(err)}`, created_at: new Date().toISOString() }
@@ -717,13 +831,30 @@ export default function Chat() {
                       card.status === 'error' ? 'bg-red-500/10 border-red-500/30 text-red-300' :
                       'bg-surface-700 border-surface-600 text-gray-400'
                     }`}>
-                      {card.status === 'pending' && (
+                      {(card.status === 'pending' || card.status === 'approved') && (
                         <span className="flex items-center gap-2">
                           <span className="w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
-                          Creating job...
+                          {card.result ?? 'Working...'}
                         </span>
                       )}
-                      {card.status !== 'pending' && card.result}
+                      {card.status === 'awaiting_approval' && (
+                        <div className="space-y-3">
+                          <div>
+                            <p className="font-semibold text-amber-300">Review before writing</p>
+                            <p className="text-gray-300 mt-1">{actionLabel(card.action)}</p>
+                          </div>
+                          {actionPreview(card.action).length > 0 && (
+                            <ul className="space-y-1 text-gray-400">
+                              {actionPreview(card.action).map((line, idx) => <li key={idx}>• {line}</li>)}
+                            </ul>
+                          )}
+                          <div className="flex gap-2">
+                            <button className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-medium" onClick={() => approveAction(card)}>Approve</button>
+                            <button className="px-3 py-1.5 rounded-lg bg-surface-600 hover:bg-surface-500 text-gray-200 font-medium" onClick={() => rejectAction(card.msgId)}>Reject</button>
+                          </div>
+                        </div>
+                      )}
+                      {card.status !== 'pending' && card.status !== 'approved' && card.status !== 'awaiting_approval' && card.result}
                       {card.status === 'done' && card.action.scheduled_date && (
                         <span className="block mt-0.5 text-emerald-400/70">
                           📅 {card.action.scheduled_date}

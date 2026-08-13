@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { saveSettings, upsertCategory } from '../../lib/db'
 import { uuid } from '../../lib/db'
-import { isElectron, ipc } from '../../lib/electron'
 
 const DEFAULT_CATEGORIES = [
   { name_el: 'Επισκευή',         name_en: 'Repair',              color: '#4f6ef7' },
@@ -22,7 +21,6 @@ export default function Onboarding({ onComplete }: Props) {
   const [phone, setPhone]                 = useState('')
   const [workType, setWorkType]           = useState('')
   const [selectedCats, setSelectedCats]   = useState<string[]>(DEFAULT_CATEGORIES.map(c => c.name_en))
-  const [claudeKey, setClaudeKey]         = useState('')
   const [syncEnabled, setSyncEnabled]     = useState(false)
   const [saving, setSaving]               = useState(false)
 
@@ -38,14 +36,8 @@ export default function Onboarding({ onComplete }: Props) {
   const toggleCat = (name: string) =>
     setSelectedCats(p => p.includes(name) ? p.filter(x => x !== name) : [...p, name])
 
-  const saveToKeychain = async (key: string, value: string) => {
-    if (isElectron && value) await ipc.keychain.set(key, value)
-  }
-
   const finish = async () => {
     setSaving(true)
-
-    await saveToKeychain('claude_api_key', claudeKey)
 
     await saveSettings({
       owner_name: name,
@@ -179,17 +171,6 @@ export default function Onboarding({ onComplete }: Props) {
                 <h2 className="text-xl font-semibold">{t('onboarding.step5Title')}</h2>
               </div>
               <p className="text-gray-400 text-sm mb-6">{t('onboarding.step5Sub')}</p>
-
-              <div>
-                <label className="label">{t('onboarding.claudeKey')}</label>
-                <input
-                  className="input font-mono text-sm"
-                  type="password"
-                  value={claudeKey}
-                  onChange={e => setClaudeKey(e.target.value)}
-                  placeholder="sk-ant-..."
-                />
-              </div>
 
               <div className="flex gap-3 mt-6">
                 <button className="btn-ghost flex-1 justify-center" onClick={() => setStep(3)}>{t('onboarding.back')}</button>

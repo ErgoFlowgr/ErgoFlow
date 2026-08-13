@@ -3,9 +3,11 @@ import path from 'path'
 import { app } from 'electron'
 
 let db: Database.Database
+let currentDbPath: string | null = null
 
 export function initDatabase() {
   const dbPath = path.join(app.getPath('userData'), 'crm.db')
+  currentDbPath = dbPath
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
@@ -15,6 +17,7 @@ export function initDatabase() {
 export function switchDatabase(userId: string) {
   try { db.close() } catch { /* ignore */ }
   const dbPath = path.join(app.getPath('userData'), `crm-${userId}.db`)
+  currentDbPath = dbPath
   db = new Database(dbPath)
   db.pragma('journal_mode = WAL')
   db.pragma('foreign_keys = ON')
@@ -29,6 +32,24 @@ export function switchDatabase(userId: string) {
 export function getDb() {
   if (!db) throw new Error('Database not initialized')
   return db
+}
+
+export function getDbPath() {
+  if (!currentDbPath) throw new Error('Database path not initialized')
+  return currentDbPath
+}
+
+export function closeCurrentDatabase() {
+  if (db) db.close()
+}
+
+export function reopenCurrentDatabase() {
+  if (!currentDbPath) throw new Error('Database path not initialized')
+  try { db.close() } catch { /* already closed */ }
+  db = new Database(currentDbPath)
+  db.pragma('journal_mode = WAL')
+  db.pragma('foreign_keys = ON')
+  runMigrations()
 }
 
 function runMigrations() {

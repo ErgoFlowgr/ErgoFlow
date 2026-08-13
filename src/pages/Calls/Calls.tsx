@@ -1,15 +1,23 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { getCalls, getCallStats, getCategories, deleteCall, type Call, type Category } from '../../lib/db'
+import { getCalls, getCallStats, getCategories, deleteCall, upsertCall, type Call, type Category } from '../../lib/db'
+import { supabaseFetch } from '../../lib/platform'
+import { useSubscription } from '../../App'
 import CallDetailPanel from './CallDetailPanel'
 
 export default function Calls() {
   const { t, i18n } = useTranslation()
+  const { vapiMinutesUsed, vapiPhoneNumber, refreshSubscription } = useSubscription()
   const [calls, setCalls] = useState<Call[]>([])
   const [stats, setStats] = useState({ total: 0, inbound: 0, outbound: 0, missed: 0 })
   const [categories, setCategories] = useState<Category[]>([])
   const [selected, setSelected] = useState<Call | null>(null)
   const [loading, setLoading] = useState(true)
+  const [phone, setPhone] = useState('')
+  const [name, setName] = useState('')
+  const [reason, setReason] = useState('')
+  const [creating, setCreating] = useState(false)
+  const [message, setMessage] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
@@ -42,13 +50,56 @@ export default function Calls() {
     return `${m}:${String(s).padStart(2, '0')}`
   }
 
-  const formatTime = (ts: string | null) =>
-    ts ? new Date(ts).toLocaleString() : '—'
+  const formatTime = (ts: string | null) => ts ? new Date(ts).toLocaleString() : '—'
 
   const statusBadge = (status: string) => {
     if (status === 'completed') return <span className="badge-green">{t('status.completed')}</span>
-    if (status === 'missed')    return <span className="badge-red">{t('status.missed')}</span>
-    return <span className="badge-yellow">{t('status.in-progress')}</span>
+    if (status === 'missed' || status === 'failed') return <span className="badge-red">{t('status.missed')}</span>
+    return <span className="badge-yellow">{status || t('status.in-progress')}</span>
+  }
+
+  const syncFromVapi = async () => {
+    setMessage('Syncing VAPI call status...')
+    try {
+      const res = await supabaseFetch('/functions/v1/vapi-sync', { method: 'POST', body: '{}' })
+      const data = await res.json().catch(() => ({})) as { synced?: number; error?: string }
+      if (!res.ok) throw new Error(data.error ?? 'VAPI sync failed')
+      setMessage(`Synced ${data.synced ?? 0} call row(s).`)
+      await Promise.all([load(), refreshSubscription()])
+    } catch (e) {
+      setMessage(`Sync failed: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+
+  const startOutboundCall = async () => {
+    if (!phone.trim()) return
+    setCreating(true)
+    setMessage(null)
+    try {
+      const res = await supabaseFetch('/functions/v1/create-vapi-call', {
+        method: 'POST',
+        body: JSON.stringify({ phone: phone.trim(), customer_name: name.trim() || undefined, reason: reason.trim() || undefined }),
+      })
+      const data = await res.json().catch(() => ({})) as { id?: string; vapiCallId?: string; status?: string; error?: string }
+      if (!res.ok) throw new Error(data.error ?? 'Could not create VAPI call')
+      await upsertCall({
+        id: data.id,
+        vapi_call_id: data.vapiCallId ?? null,
+        customer_phone: phone.trim(),
+        customer_name: name.trim() || phone.trim(),
+        direction: 'outbound',
+        status: data.status ?? 'queued',
+        started_at: new Date().toISOString(),
+        summary: reason.trim() ? `Outbound call requested: ${reason.trim()}` : 'Outbound call requested from ErgoFlow.',
+      })
+      setPhone(''); setName(''); setReason('')
+      setMessage('Outbound call queued. Use Sync status after the call ends to pull transcript/summary.')
+      await Promise.all([load(), refreshSubscription()])
+    } catch (e) {
+      setMessage(`Call failed: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setCreating(false)
+    }
   }
 
   const statCards = [
@@ -59,25 +110,31 @@ export default function Calls() {
   ]
 
   return (
-    <div className="relative flex h-full">
-      {/* Coming Soon overlay */}
-      <div className="absolute inset-0 z-10 bg-surface-900/80 backdrop-blur-sm flex flex-col items-center justify-center text-center p-6">
-        <div className="w-16 h-16 rounded-full bg-surface-700 flex items-center justify-center mb-4">
-          <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 8V5z" />
-          </svg>
-        </div>
-        <h2 className="text-xl font-bold text-white mb-2">Σύντομα διαθέσιμο</h2>
-        <p className="text-gray-400 text-sm max-w-xs">
-          Αυτοματοποιημένες κλήσεις και απομαγνητοφώνηση — έρχεται σύντομα.
-        </p>
-      </div>
-
-      <div className="flex h-full w-full">
+    <div className="flex h-full w-full">
       <div className="flex-1 p-4 sm:p-6 overflow-auto">
-        <h1 className="text-2xl font-bold mb-6">{t('calls.title')}</h1>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold">{t('calls.title')}</h1>
+            <p className="text-sm text-gray-400 mt-1">AI Caller · {vapiMinutesUsed}/100 min used · {vapiPhoneNumber ? `Number ${vapiPhoneNumber}` : 'No number provisioned yet'}</p>
+          </div>
+          <button className="btn-secondary" onClick={syncFromVapi}>Sync status</button>
+        </div>
 
-        {/* Stat cards */}
+        {message && <div className="mb-4 rounded-lg border border-surface-600 bg-surface-800 px-4 py-3 text-sm text-gray-300">{message}</div>}
+
+        <div className="card mb-6">
+          <h2 className="font-semibold mb-3">Start outbound call</h2>
+          <div className="grid sm:grid-cols-3 gap-3">
+            <input className="input" placeholder="Customer phone" value={phone} onChange={e => setPhone(e.target.value)} />
+            <input className="input" placeholder="Customer name (optional)" value={name} onChange={e => setName(e.target.value)} />
+            <input className="input" placeholder="Reason / job note (optional)" value={reason} onChange={e => setReason(e.target.value)} />
+          </div>
+          <div className="flex items-center justify-between mt-3">
+            <p className="text-xs text-gray-500">Creates a VAPI outbound call and a local call row; transcript arrives through webhook/sync.</p>
+            <button className="btn-primary" onClick={startOutboundCall} disabled={creating || !phone.trim()}>{creating ? 'Calling...' : 'Call now'}</button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           {statCards.map(s => (
             <div key={s.label} className="card">
@@ -87,27 +144,18 @@ export default function Calls() {
           ))}
         </div>
 
-        {/* Calls table */}
         {loading ? (
-          <div className="flex items-center justify-center h-48">
-            <div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" />
-          </div>
+          <div className="flex items-center justify-center h-48"><div className="w-6 h-6 border-2 border-brand-500 border-t-transparent rounded-full animate-spin" /></div>
         ) : calls.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-center">
-            <div className="w-16 h-16 rounded-full bg-surface-700 flex items-center justify-center mb-4">
-              <svg className="w-8 h-8 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 8V5z" />
-              </svg>
-            </div>
             <p className="text-gray-300 font-medium">{t('calls.noData')}</p>
-            <p className="text-gray-500 text-sm mt-1">{t('calls.noDataSub')}</p>
+            <p className="text-gray-500 text-sm mt-1">Inbound webhook and outbound calls will appear here.</p>
           </div>
         ) : (
           <div className="card p-0 overflow-hidden">
             <div className="overflow-x-auto">
-            <table className="w-full min-w-[600px] text-sm">
-              <thead>
-                <tr className="border-b border-surface-600 text-gray-400">
+              <table className="w-full min-w-[600px] text-sm">
+                <thead><tr className="border-b border-surface-600 text-gray-400">
                   <th className="text-left px-4 py-3 font-medium">{t('calls.caller')}</th>
                   <th className="text-left px-4 py-3 font-medium">{t('calls.phone')}</th>
                   <th className="text-left px-4 py-3 font-medium">{t('calls.time')}</th>
@@ -115,52 +163,26 @@ export default function Calls() {
                   <th className="text-left px-4 py-3 font-medium">{t('calls.category')}</th>
                   <th className="text-left px-4 py-3 font-medium">{t('calls.status')}</th>
                   <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody>
-                {calls.map(call => (
-                  <tr
-                    key={call.id}
-                    onClick={() => setSelected(call)}
-                    className={`border-b border-surface-700 cursor-pointer hover:bg-surface-700 transition-colors ${selected?.id === call.id ? 'bg-surface-700' : ''}`}
-                  >
-                    <td className="px-4 py-3 font-medium">{call.customer_name ?? '—'}</td>
-                    <td className="px-4 py-3 text-gray-400">{call.customer_phone ?? '—'}</td>
-                    <td className="px-4 py-3 text-gray-400">{formatTime(call.started_at)}</td>
-                    <td className="px-4 py-3 text-gray-400">{formatDuration(call.duration_seconds)}</td>
-                    <td className="px-4 py-3 text-gray-400">{catName(call.category_id)}</td>
-                    <td className="px-4 py-3">{statusBadge(call.status)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <button
-                        onClick={async e => {
-                          e.stopPropagation()
-                          if (!confirm('Delete this call?')) return
-                          await deleteCall(call.id)
-                          if (selected?.id === call.id) setSelected(null)
-                          load()
-                        }}
-                        className="p-1.5 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors"
-                        title="Delete call"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </tr></thead>
+                <tbody>
+                  {calls.map(call => (
+                    <tr key={call.id} onClick={() => setSelected(call)} className={`border-b border-surface-700 cursor-pointer hover:bg-surface-700 transition-colors ${selected?.id === call.id ? 'bg-surface-700' : ''}`}>
+                      <td className="px-4 py-3 font-medium">{call.customer_name ?? '—'}</td>
+                      <td className="px-4 py-3 text-gray-400">{call.customer_phone ?? '—'}</td>
+                      <td className="px-4 py-3 text-gray-400">{formatTime(call.started_at)}</td>
+                      <td className="px-4 py-3 text-gray-400">{formatDuration(call.duration_seconds)}</td>
+                      <td className="px-4 py-3 text-gray-400">{catName(call.category_id)}</td>
+                      <td className="px-4 py-3">{statusBadge(call.status)}</td>
+                      <td className="px-4 py-3 text-right"><button onClick={async e => { e.stopPropagation(); if (!confirm('Delete this call?')) return; await deleteCall(call.id); if (selected?.id === call.id) setSelected(null); load() }} className="p-1.5 rounded text-gray-500 hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Delete call">✕</button></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
       </div>
-
-      {/* Detail panel */}
-      {selected && (
-        <CallDetailPanel call={selected} onClose={() => setSelected(null)} />
-      )}
-      </div>
+      {selected && <CallDetailPanel call={selected} onClose={() => setSelected(null)} onChanged={load} />}
     </div>
   )
 }

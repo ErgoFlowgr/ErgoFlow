@@ -82,6 +82,7 @@ import Customers from './pages/Customers/Customers'
 import CustomerProfile from './pages/Customers/CustomerProfile'
 import Chat from './pages/Chat/Chat'
 import SettingsPage from './pages/Settings/Settings'
+import Diagnostics from './pages/Diagnostics/Diagnostics'
 import Dashboard from './pages/Dashboard/Dashboard'
 import Jobs from './pages/Jobs/Jobs'
 import Offers from './pages/Offers/Offers'
@@ -319,6 +320,7 @@ export default function App() {
           <Route path="/customers/:id" element={<CustomerProfile />} />
           <Route path="/chat"      element={<LockedFeature requiredTier="plus"><Chat /></LockedFeature>} />
           <Route path="/settings"  element={<SettingsPage />} />
+          <Route path="/diagnostics" element={<Diagnostics />} />
         </Routes>
       </Layout>
     </SubscriptionContext.Provider>

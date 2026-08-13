@@ -73,16 +73,14 @@ function buildInvoiceHtml(inv: Invoice, items: InvoiceItem[], settings: Settings
   .date-value { font-size: 13px; font-weight: 600; margin-top: 2px; }
 
   /* Items table */
-  table.items { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  table.items { width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 20px; }
   table.items thead tr { background: ${bannerColor}; color: #fff; }
-  table.items th { padding: 9px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
-  table.items th:first-child { text-align: left; }
-  table.items th:not(:first-child) { text-align: right; }
+  table.items th { padding: 9px 12px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; vertical-align: middle; }
   table.items tbody tr:nth-child(even) { background: #f7f9fc; }
-  table.items td { padding: 9px 12px; border-bottom: 1px solid #e5e9f0; }
-  .td-desc { text-align: left; }
-  .td-center { text-align: right; }
-  .td-right { text-align: right; }
+  table.items td { padding: 9px 12px; border-bottom: 1px solid #e5e9f0; vertical-align: top; }
+  .th-desc, .td-desc { text-align: left; }
+  .th-qty, .td-center { text-align: center; }
+  .th-money, .td-right { text-align: right; white-space: nowrap; }
 
   /* Totals */
   .bottom { display: flex; justify-content: flex-end; margin-bottom: 20px; }
@@ -153,12 +151,18 @@ function buildInvoiceHtml(inv: Invoice, items: InvoiceItem[], settings: Settings
 
 <!-- Items -->
 <table class="items">
+  <colgroup>
+    <col style="width:44%" />
+    <col style="width:16%" />
+    <col style="width:22%" />
+    <col style="width:18%" />
+  </colgroup>
   <thead>
     <tr>
-      <th style="text-align:left;width:50%">Περιγραφή / Description</th>
-      <th>Ποσότητα / Qty</th>
-      <th>Τιμή Μονάδας / Unit Price</th>
-      <th>Αξία / Amount</th>
+      <th class="th-desc">Περιγραφή / Description</th>
+      <th class="th-qty">Ποσότητα / Qty</th>
+      <th class="th-money">Τιμή Μονάδας / Unit Price</th>
+      <th class="th-money">Αξία / Amount</th>
     </tr>
   </thead>
   <tbody>${rows}</tbody>
@@ -460,6 +464,41 @@ export default function Invoices() {
     }
   }
 
+  const handleShareEmail = async (inv: Invoice) => {
+    const customer = customers.find(c => c.id === inv.customer_id)
+    const email = customer?.email?.trim()
+    if (!email) {
+      alert('Δεν υπάρχει email στον πελάτη.')
+      return
+    }
+
+    const invItems = await getInvoiceItems(inv.id)
+    const lines = invItems.filter(it => it.description.trim()).map(it =>
+      `  • ${it.description} x${it.quantity}  ${it.total.toLocaleString('el-GR', { minimumFractionDigits: 2 })}€`
+    ).join('\n')
+    const docLabel = inv.document_type === 'receipt' ? 'απόδειξη' : 'τιμολόγιο'
+    const companyName = settings?.company_name ?? ''
+    const phone = settings?.phone ?? settings?.phone2 ?? ''
+    const subject = `${docLabel.charAt(0).toUpperCase()}${docLabel.slice(1)} ${inv.number}${inv.customer_name ? ' - ' + inv.customer_name : ''}`
+    const body = [
+      `Καλησπέρα${inv.customer_name ? ' ' + inv.customer_name : ''},`,
+      '',
+      `Σας στέλνουμε το ${docLabel} ${inv.number}.`,
+      inv.issue_date ? `Ημερομηνία: ${inv.issue_date}` : '',
+      inv.due_date ? `Προθεσμία πληρωμής: ${inv.due_date}` : '',
+      '',
+      lines ? `Εργασίες / Υλικά:\n${lines}` : '',
+      '',
+      `Σύνολο: ${inv.total.toLocaleString('el-GR', { minimumFractionDigits: 2 })}€`,
+      inv.notes ? `\nΣημειώσεις: ${inv.notes}` : '',
+      '',
+      [companyName, phone].filter(Boolean).join(' | '),
+    ].filter(Boolean).join('\n')
+    const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    if (isElectron) await ipc.openExternal(url)
+    else window.location.href = url
+  }
+
   const statusColor = (s: Invoice['status']) =>
     s === 'paid'    ? 'bg-emerald-500/20 text-emerald-400' :
     s === 'pending' ? 'bg-blue-500/20 text-blue-400' :
@@ -668,6 +707,17 @@ export default function Invoices() {
                     <path d="M11.992 2C6.476 2 2 6.476 2 11.992c0 2.172.693 4.18 1.864 5.822L2.5 21.5l3.794-1.328A9.956 9.956 0 0011.992 22c5.516 0 9.992-4.476 9.992-9.992C21.984 6.476 17.508 2 11.992 2zm4.9 13.9c-.21.588-.942 1.176-1.596 1.26-.42.042-.966.084-3.108-.672-2.604-.966-4.284-3.612-4.41-3.78-.126-.168-1.05-1.386-1.05-2.646 0-1.26.672-1.89 1.008-2.142.336-.252.714-.336.966-.336.252 0 .462 0 .672.042.21.042.504-.084.798.588.294.672 1.008 2.31 1.092 2.478.084.168.126.378 0 .588-.126.21-.168.336-.336.504-.168.168-.336.378-.462.504-.168.168-.336.378-.168.714.168.336.756 1.26 1.638 2.058 1.134 1.008 2.1 1.344 2.394 1.47.294.126.462.084.63-.084.168-.168.714-.84.882-1.134.168-.294.378-.252.63-.168.252.084 1.638.798 1.932.966.294.168.504.252.588.378.084.168.084.672-.126 1.26z"/>
                   </svg>
                   Viber
+                </button>
+                {/* Email */}
+                <button
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 transition-colors"
+                  onClick={() => handleShareEmail(inv)}
+                  title="Αποστολή με email"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  Email
                 </button>
                 {/* Submit to myDATA — all tiers */}
                 {inv.mydata_status !== 'submitted' && (

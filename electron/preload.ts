@@ -48,6 +48,11 @@ contextBridge.exposeInMainWorld('electron', {
   openExternal:    (url: string)                 => ipcRenderer.invoke('shell:openExternal', url),
   getVersion:      ()                            => ipcRenderer.invoke('app:getVersion'),
   getDataPath:     ()                            => ipcRenderer.invoke('app:getDataPath'),
+  backup: {
+    create:         () => ipcRenderer.invoke('backup:create'),
+    restore:        () => ipcRenderer.invoke('backup:restore'),
+    showDataFolder: () => ipcRenderer.invoke('backup:showDataFolder'),
+  },
 
   // Subscription / license check
   subscriptionCheck: () => ipcRenderer.invoke('subscription:check'),

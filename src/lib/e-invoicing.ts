@@ -103,14 +103,24 @@ function inferInvoiceType(documentType: string): string {
   // Current ErgoFlow documents are service invoices/receipts. Keep this isolated so
   // future B2G/credit-note mappings are changed in one place, not all over the app.
   if (documentType === 'receipt') return '11.2'
-  return '1.1'
+  return '2.1'
 }
 
 function vatCategoryFromRate(vatRatePercent: number): number {
-  if (vatRatePercent >= 24) return 1
-  if (vatRatePercent >= 13) return 2
-  if (vatRatePercent >= 6) return 3
-  return 4
+  if (vatRatePercent === 24) return 1
+  if (vatRatePercent === 13) return 2
+  if (vatRatePercent === 6) return 3
+  if (vatRatePercent === 0) return 4
+  throw new Error(`Unsupported VAT rate for Bratnet/myDATA submission: ${vatRatePercent}%`)
+}
+
+function incomeClassificationForLine(amount: number) {
+  return [{
+    classificationType: 'E3_561_001',
+    classificationCategory: 'category1_3',
+    amount,
+    id: 1,
+  }]
 }
 
 export interface BuildBratnetIssuePayloadInput extends IssueDocumentInput {
@@ -161,6 +171,8 @@ export function buildBratnetIssuePayloads(input: BuildBratnetIssuePayloadInput) 
       vatPercent: vatRatePercent,
       vatAmount: lineVat,
       measurementUnitName: 'ΤΕΜ',
+      incomeClassification: incomeClassificationForLine(lineNet),
+      priceIncludeVAT: 0,
     }
   })
 
@@ -202,7 +214,9 @@ export function buildBratnetIssuePayloads(input: BuildBratnetIssuePayloadInput) 
           invoiceType,
           currency: 'EUR',
         },
-        paymentMethods: [{ type: 3, amount: totalValue }],
+        paymentMethods: {
+          paymentMethodDetails: [{ type: 3, amount: totalValue }],
+        },
         invoiceDetails,
         invoiceSummary: {
           totalNetValue: netValue,

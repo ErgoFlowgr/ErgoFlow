@@ -3,10 +3,12 @@ import { autoUpdater } from 'electron-updater'
 import path from 'path'
 import fs from 'fs'
 import os from 'os'
-import { initDatabase, switchDatabase, getDb, cleanupOldPendingJobs } from './db'
+import { initDatabase, switchDatabase, getDb, getDbPath, closeCurrentDatabase, reopenCurrentDatabase, cleanupOldPendingJobs } from './db'
+import Database from 'better-sqlite3'
 import { storeSecret, getSecret, deleteSecret } from './keychain'
 import { setupSyncWorker, triggerSync, triggerPull, isSyncWorkerRunning } from './sync'
 import { setSessionToken, getSessionToken, setRefreshToken, getRefreshToken } from './session'
+import { buildBasicAuthHeader, buildBratnetIssuePayloads } from '../src/lib/e-invoicing'
 
 const DEV = process.env['NODE_ENV'] === 'development'
 const DEV_SERVER = `http://127.0.0.1:${process.env['VITE_DEV_PORT'] ?? '5173'}`
@@ -320,7 +322,7 @@ ipcMain.handle('notify', (_e, title: string, body: string) => {
 ipcMain.handle('shell:openExternal', (_e, url: string) => {
   // Allow http/https and known messenger schemes
   const parsed = new URL(url)
-  const allowed = ['https:', 'http:', 'whatsapp:', 'viber:']
+  const allowed = ['https:', 'http:', 'whatsapp:', 'viber:', 'mailto:']
   if (!allowed.includes(parsed.protocol)) {
     console.warn('openExternal blocked URL:', parsed.protocol)
     return
@@ -331,6 +333,200 @@ ipcMain.handle('shell:openExternal', (_e, url: string) => {
 // ── IPC: App info ─────────────────────────────────────────────────────────
 ipcMain.handle('app:getVersion', () => app.getVersion())
 ipcMain.handle('app:getDataPath', () => app.getPath('userData'))
+
+
+type BackupManifest = {
+  format: 'ergoflow.desktop.backup'
+  formatVersion: 1
+  createdAt: string
+  appVersion: string
+  source: {
+    platform: NodeJS.Platform
+    dbFile: string
+  }
+  notes: string[]
+  counts: Record<string, number>
+  data: {
+    sqliteBase64: string
+  }
+}
+
+const BACKUP_FORMAT = 'ergoflow.desktop.backup'
+const BACKUP_FORMAT_VERSION = 1
+const SECRET_SETTING_COLUMNS = [
+  'claude_api_key',
+  'brave_search_key',
+  'mydata_user_id',
+  'mydata_api_key',
+  'bratnet_username',
+  'bratnet_api_key',
+]
+const SECRET_COLUMN_PATTERN = /(api[_-]?key|token|secret|password|credential|connection[_-]?string|user[_-]?id|username)/i
+const BACKUP_TABLES = ['customers', 'jobs', 'offers', 'invoices', 'inventory', 'calls', 'sync_queue']
+const MAX_BACKUP_BYTES = 500 * 1024 * 1024
+
+function safeTimestamp() {
+  return new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+}
+
+function getBackupTempDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'ergoflow-backup-'))
+}
+
+function redactSecretsFromBackupDb(dbFile: string) {
+  const backupDb = new Database(dbFile)
+  try {
+    const columns = backupDb.prepare('PRAGMA table_info(settings)').all() as Array<{ name: string }>
+    const secretColumns = columns
+      .map((column) => column.name)
+      .filter((name) => SECRET_SETTING_COLUMNS.includes(name) || SECRET_COLUMN_PATTERN.test(name))
+    for (const column of secretColumns) {
+      backupDb.prepare(`UPDATE settings SET ${column} = NULL`).run()
+    }
+    backupDb.pragma('wal_checkpoint(TRUNCATE)')
+  } finally {
+    backupDb.close()
+  }
+}
+
+function readBackupCounts(dbFile: string) {
+  const backupDb = new Database(dbFile, { readonly: true })
+  const counts: Record<string, number> = {}
+  try {
+    for (const table of BACKUP_TABLES) {
+      try {
+        const row = backupDb.prepare(`SELECT COUNT(*) as n FROM ${table}`).get() as { n?: number } | undefined
+        counts[table] = row?.n ?? 0
+      } catch {
+        counts[table] = -1
+      }
+    }
+  } finally {
+    backupDb.close()
+  }
+  return counts
+}
+
+function verifyBackupSqlite(dbFile: string) {
+  const restoreDb = new Database(dbFile, { readonly: true })
+  try {
+    const integrity = restoreDb.pragma('integrity_check') as Array<{ integrity_check?: string }>
+    const result = integrity[0]?.integrity_check
+    if (result !== 'ok') throw new Error(`Backup database failed integrity check: ${result ?? 'unknown error'}`)
+    restoreDb.prepare('SELECT name FROM sqlite_master WHERE type = ? AND name = ?').get('table', 'settings')
+  } finally {
+    restoreDb.close()
+  }
+}
+
+async function writeBackupFile(destination: string) {
+  const tmpDir = getBackupTempDir()
+  const backupDbPath = path.join(tmpDir, 'crm.backup.sqlite')
+  try {
+    const db = getDb()
+    db.pragma('wal_checkpoint(FULL)')
+    await db.backup(backupDbPath)
+    redactSecretsFromBackupDb(backupDbPath)
+    const counts = readBackupCounts(backupDbPath)
+    const sqliteBase64 = fs.readFileSync(backupDbPath).toString('base64')
+    const manifest: BackupManifest = {
+      format: BACKUP_FORMAT,
+      formatVersion: BACKUP_FORMAT_VERSION,
+      createdAt: new Date().toISOString(),
+      appVersion: app.getVersion(),
+      source: {
+        platform: process.platform,
+        dbFile: path.basename(getDbPath()),
+      },
+      notes: [
+        'Sensitive settings such as API keys, auth tokens, service credentials, and connection secrets are omitted from this backup.',
+        'Restore replaces the local ErgoFlow desktop database and then reloads the app.',
+      ],
+      counts,
+      data: { sqliteBase64 },
+    }
+    fs.writeFileSync(destination, JSON.stringify(manifest, null, 2), 'utf-8')
+    return { ok: true, filePath: destination, counts, redactedSecrets: SECRET_SETTING_COLUMNS }
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+  }
+}
+
+function parseBackupFile(filePath: string): BackupManifest {
+  const stat = fs.statSync(filePath)
+  if (stat.size > MAX_BACKUP_BYTES) throw new Error('Backup file is too large to restore safely')
+  const manifest = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as BackupManifest
+  if (manifest.format !== BACKUP_FORMAT) throw new Error('Not an ErgoFlow desktop backup file')
+  if (manifest.formatVersion !== BACKUP_FORMAT_VERSION) throw new Error(`Unsupported backup format version: ${manifest.formatVersion}`)
+  if (!manifest.data?.sqliteBase64) throw new Error('Backup file is missing database payload')
+  return manifest
+}
+
+
+ipcMain.handle('backup:create', async () => {
+  const defaultName = `ErgoFlow-backup-${safeTimestamp()}.ergoflow-backup`
+  const { filePath, canceled } = await dialog.showSaveDialog({
+    title: 'Create ErgoFlow backup',
+    defaultPath: path.join(app.getPath('documents'), defaultName),
+    filters: [{ name: 'ErgoFlow Backup', extensions: ['ergoflow-backup'] }],
+  })
+  if (canceled || !filePath) return { ok: false, canceled: true }
+  return writeBackupFile(filePath)
+})
+
+ipcMain.handle('backup:restore', async () => {
+  const warningOptions = {
+    type: 'warning' as const,
+    buttons: ['Cancel', 'Choose backup file'],
+    defaultId: 0,
+    cancelId: 0,
+    title: 'Restore ErgoFlow backup',
+    message: 'Restore will replace the current local ErgoFlow database.',
+    detail: 'ErgoFlow will first create a safety backup of the current database. Secret settings are not restored from backups and may need to be re-entered after reload.',
+  }
+  const choice = mainWindow
+    ? await dialog.showMessageBox(mainWindow, warningOptions)
+    : await dialog.showMessageBox(warningOptions)
+  if (choice.response !== 1) return { ok: false, canceled: true }
+
+  const openOptions = {
+    title: 'Restore ErgoFlow backup',
+    properties: ['openFile'] as Array<'openFile'>,
+    filters: [{ name: 'ErgoFlow Backup', extensions: ['ergoflow-backup'] }],
+  }
+  const picked = mainWindow
+    ? await dialog.showOpenDialog(mainWindow, openOptions)
+    : await dialog.showOpenDialog(openOptions)
+  if (picked.canceled || picked.filePaths.length === 0) return { ok: false, canceled: true }
+
+  const manifest = parseBackupFile(picked.filePaths[0])
+  const tmpDir = getBackupTempDir()
+  const restoreDbPath = path.join(tmpDir, 'restore.sqlite')
+  try {
+    const payload = Buffer.from(manifest.data.sqliteBase64, 'base64')
+    fs.writeFileSync(restoreDbPath, payload)
+    redactSecretsFromBackupDb(restoreDbPath)
+    verifyBackupSqlite(restoreDbPath)
+
+    const activeDbPath = getDbPath()
+    const safetyPath = path.join(path.dirname(activeDbPath), `before-restore-${safeTimestamp()}-${path.basename(activeDbPath)}`)
+    await getDb().backup(safetyPath)
+    closeCurrentDatabase()
+    fs.copyFileSync(restoreDbPath, activeDbPath)
+    reopenCurrentDatabase()
+    setTimeout(() => mainWindow?.reload(), 500)
+    return { ok: true, restoredFrom: picked.filePaths[0], safetyBackupPath: safetyPath, counts: manifest.counts, reloadRequired: true }
+  } catch (error) {
+    try { reopenCurrentDatabase() } catch {}
+    throw error
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }) } catch {}
+  }
+})
+
+ipcMain.handle('backup:showDataFolder', () => {
+  shell.openPath(app.getPath('userData'))
+})
 
 // ── IPC: PDF Download ─────────────────────────────────────────────────────
 ipcMain.handle('pdf:download', async (_e, url: string) => {
@@ -474,39 +670,17 @@ ipcMain.handle('mydata:submit', async (_e, params: {
       return { success: false, error: 'Missing Bratnet credentials. Go to Settings → Ηλεκτρονική Τιμολόγηση.' }
     }
 
-    const authHeader = 'Basic ' + Buffer.from(`${bratnetUsername}:${bratnetApiKey}`).toString('base64')
-
-    // Parse invoice series and sequential number from invoice.number.
-    // Expected format: "ΑΠΥ-2026-001" → series "ΑΠΥ", aa 1
-    // Fallback: series "ΑΠΥ", aa 1
-    const seriesMatch = invoice.number.match(/^([A-Za-zΑ-Ωα-ωΆ-Ώ]+)/)
-    const aaMatch     = invoice.number.match(/(\d+)$/)
-    const series = seriesMatch ? seriesMatch[1] : 'ΑΠΥ'
-    const aa     = aaMatch    ? parseInt(aaMatch[1], 10) : 1
-
-    const issueDate = invoice.issue_date ?? new Date().toISOString().slice(0, 10)
-    const issueTime = '00:00:00'
-
-    const netValue   = Math.round((invoice.total - invoice.tax_amount) * 100) / 100
-    const vatAmount  = Math.round(invoice.tax_amount * 100) / 100
-    const totalValue = Math.round(invoice.total * 100) / 100
-
-    // ── Step 1: createSimSign ────────────────────────────────────────────
-    const externalSystemId = invoice.number  // unique per invoice
-    const createSignPayload = {
-      externalSystemId,
-      issuerVatNumber: companyVat,
-      invoiceIssueDate: issueDate,
-      invoiceIssueTime: issueTime,
-      invoiceType: '1.1',
-      invoiceSeries: series,
-      netValue,
-      vatAmount,
-      totalValue,
-      paymentAmount: totalValue,
-      nspCode: '01',
-      terminalId: 'EF-001',
-    }
+    const authHeader = buildBasicAuthHeader(bratnetUsername, bratnetApiKey)
+    const issueTime = new Date().toTimeString().slice(0, 8)
+    const unsignedPayloads = buildBratnetIssuePayloads({
+      invoice,
+      lineItems,
+      companyVat,
+      customerVat,
+      issueTime,
+      signature: '',
+      environment: 'sandbox',
+    })
 
     const signRes = await net.fetch(`${BRATNET_BASE_URL}/createSimSign`, {
       method: 'POST',
@@ -514,7 +688,7 @@ ipcMain.handle('mydata:submit', async (_e, params: {
         'Authorization': authHeader,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(createSignPayload),
+      body: JSON.stringify(unsignedPayloads.createSimSign),
     })
 
     if (!signRes.ok) {
@@ -529,82 +703,15 @@ ipcMain.handle('mydata:submit', async (_e, params: {
     }
 
     // ── Step 2: sendSimInvoice ───────────────────────────────────────────
-    // Build invoice details lines; last line absorbs rounding remainder
-    const taxRate       = netValue > 0 ? vatAmount / netValue : 0
-    const discountFactor = invoice.subtotal > 0 ? netValue / invoice.subtotal : 1
-    const vatRatePercent = Math.round(taxRate * 100)
-    // Map tax rate % to vatCategory: 24→1, 13→2, 6→3, 0→4
-    const vatCategory = vatRatePercent >= 24 ? 1 : vatRatePercent >= 13 ? 2 : vatRatePercent >= 6 ? 3 : 4
-    let netAccum = 0
-    let vatAccum = 0
-    const invoiceDetails = lineItems.map((item, idx) => {
-      let lineNet: number
-      let lineVat: number
-      if (idx === lineItems.length - 1) {
-        lineNet = Math.round((netValue - netAccum) * 100) / 100
-        lineVat = Math.round((vatAmount - vatAccum) * 100) / 100
-      } else {
-        lineNet = Math.round(item.total * discountFactor * 100) / 100
-        lineVat = Math.round(lineNet * taxRate * 100) / 100
-        netAccum += lineNet
-        vatAccum += lineVat
-      }
-      return {
-        lineNumber: idx + 1,
-        code: 'SRV',
-        name: item.description || 'Υπηρεσία',
-        quantity: item.quantity,
-        price: Math.round(item.unit_price * discountFactor * 100) / 100,
-        netValue: lineNet,
-        vatCategory,
-        vatPercent: vatRatePercent,
-        vatAmount: lineVat,
-        measurementUnitName: 'ΤΕΜ',
-      }
+    const signedPayloads = buildBratnetIssuePayloads({
+      invoice,
+      lineItems,
+      companyVat,
+      customerVat,
+      issueTime,
+      signature: hSignature,
+      environment: 'sandbox',
     })
-
-    const sendPayload = {
-      invoice: [
-        {
-          issuer: {
-            vatNumber: companyVat,
-            country: 'GR',
-            branch: 0,
-          },
-          counterpart: {
-            vatNumber: customerVat || '000000000',
-            country: 'GR',
-            branch: 0,
-            address: { postalCode: '00000', city: '' },
-          },
-          invoiceHeader: {
-            series,
-            aa,
-            externalSystemId,
-            issueDate,
-            issueTime,
-            invoiceType: '1.1',
-            currency: 'EUR',
-          },
-          paymentMethods: [{ type: 3, amount: totalValue }],
-          invoiceDetails,
-          invoiceSummary: {
-            totalNetValue: netValue,
-            totalVatAmount: vatAmount,
-            totalGrossValue: totalValue,
-          },
-          invoiceVatAnalysis: [
-            { vatRate: vatRatePercent, netValue, vatAmount },
-          ],
-          extra: {
-            signature: hSignature,
-            transactionId: externalSystemId,
-            tipAmount: 0,
-            nspCode: '01',
-          },
-        },
-      ],
-    }
 
     const sendRes = await net.fetch(`${BRATNET_BASE_URL}/sendSimInvoice`, {
       method: 'POST',
@@ -612,7 +719,7 @@ ipcMain.handle('mydata:submit', async (_e, params: {
         'Authorization': authHeader,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(sendPayload),
+      body: JSON.stringify(signedPayloads.sendSimInvoice),
     })
 
     if (!sendRes.ok) {

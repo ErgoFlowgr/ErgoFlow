@@ -75,7 +75,23 @@ async function callClaude(
     }),
   })
 
-  if (!res.ok) throw new Error(`Claude API error: ${await res.text()}`)
+  if (!res.ok) {
+    type ClaudeProxyError = { error?: string; action_count?: number; action_limit?: number; period?: string }
+    let details: ClaudeProxyError | null = null
+    try { details = await res.json() as ClaudeProxyError } catch { details = null }
+
+    if (details?.error === 'ai_limit_reached') {
+      const count = details.action_count ?? details.action_limit ?? 0
+      const limit = details.action_limit ?? count
+      throw new Error(`AI monthly fair-use limit reached (${count}/${limit}). Upgrade or wait for the next billing month.`)
+    }
+
+    if (details?.error === 'upgrade_required') {
+      throw new Error('AI Helper requires an active AI trial or Plus/Pro subscription.')
+    }
+
+    throw new Error(`Claude API error: ${details?.error ?? res.status}`)
+  }
   const data = await res.json() as { content: Array<{ text: string }> }
   return data.content[0]?.text ?? ''
 }
@@ -107,7 +123,7 @@ No product documents have been uploaded yet. Answer from general knowledge.`
 // ── Chat with Actions (job creation / editing via AI) ──────────────────────
 
 export interface AIAction {
-  type: 'create_job' | 'update_job' | 'download_pdfs' | 'scrape_page' | 'create_offer' | 'add_inventory_item' | 'update_inventory_item' | 'create_customer'
+  type: 'create_job' | 'update_job' | 'download_pdfs' | 'scrape_page' | 'create_offer' | 'create_invoice' | 'add_inventory_item' | 'update_inventory_item' | 'create_customer'
   title?: string
   customer_name?: string
   customer_id?: string | null
@@ -121,6 +137,10 @@ export interface AIAction {
   urls?: Array<{ name: string; url: string }>
   scrape_url?: string
   offer_items?: Array<{ description: string; quantity: number; unit_price: number }>
+  invoice_items?: Array<{ description: string; quantity: number; unit_price: number }>
+  document_type?: 'invoice' | 'receipt'
+  due_date?: string
+  expiry_date?: string
   tax_rate?: number
   item_name?: string
   item_code?: string
@@ -244,13 +264,23 @@ When the user asks to scrape a webpage or find PDFs on a specific website URL:
 - Respond conversationally AND include this block:
 <action>{"type":"scrape_page","scrape_url":"https://..."}</action>
 
+IMPORTANT — When the user wants to create an invoice, receipt, τιμολόγιο, or απόδειξη:
+- Match the customer name to an existing customer if possible (use their exact id)
+- Break down the invoice into line items (description, quantity, unit_price)
+- Default document_type is "invoice" unless the user says receipt / απόδειξη
+- Default tax_rate is 24 (Greek VAT) unless specified otherwise
+- Dates: interpret DD/MM/YYYY format, output due_date as YYYY-MM-DD when given
+- The app will show a review card before creating the draft invoice; do not claim it is final until approved
+<action>{"type":"create_invoice","document_type":"invoice","customer_name":"...","customer_id":"<uuid or null>","invoice_items":[{"description":"...","quantity":1,"unit_price":0}],"due_date":"YYYY-MM-DD or null","tax_rate":24,"notes":"..."}</action>
+
 IMPORTANT — When the user wants to create an offer, quote, or προσφορά:
 - Match the customer name to an existing customer if possible (use their exact id)
 - Break down the work into line items (description, quantity, unit_price)
 - For unit_price: ALWAYS use the exact price from the PRICE CATALOG above if the item matches. Only use 0 if genuinely unknown and not in the catalog.
+- If the user gives an expiration/valid-until date (e.g. "expiration date", "valid until", "λήξη", "ισχύει έως"), include expiry_date in YYYY-MM-DD format. Interpret DD/MM/YYYY dates correctly.
 - Default tax_rate is 24 (Greek VAT) unless specified otherwise
 - DO NOT write a formal offer letter in the chat — just confirm briefly AND ALWAYS include this action block:
-<action>{"type":"create_offer","customer_name":"...","customer_id":"<uuid or null>","offer_items":[{"description":"...","quantity":1,"unit_price":0}],"tax_rate":24}</action>
+<action>{"type":"create_offer","customer_name":"...","customer_id":"<uuid or null>","offer_items":[{"description":"...","quantity":1,"unit_price":0}],"expiry_date":"YYYY-MM-DD or null","tax_rate":24}</action>
 
 IMPORTANT — When the user wants to add a product, service, or item to the price catalog / τιμοκατάλογος:
 - Extract: name (required), code (optional short SKU/code), unit (default "τεμ." for piece, "ώρα" for hour, "μήνας" for month), price, notes

@@ -419,6 +419,40 @@ export default function Offers() {
     else window.open(url, '_blank')
   }
 
+  const handleShareEmail = async (off: Offer) => {
+    const customer = customers.find(c => c.id === off.customer_id)
+    const email = customer?.email?.trim()
+    if (!email) {
+      alert('Δεν υπάρχει email στον πελάτη.')
+      return
+    }
+
+    const offItems = await getOfferItems(off.id)
+    const lines = offItems.filter(it => it.description.trim()).map(it =>
+      `  • ${it.description} x${it.quantity}  ${it.total.toLocaleString('el-GR', { minimumFractionDigits: 2 })}€`
+    ).join('\n')
+    const companyName = settings?.company_name ?? ''
+    const phone = settings?.phone ?? settings?.phone2 ?? ''
+    const subject = `Προσφορά ${off.number}${off.customer_name ? ' - ' + off.customer_name : ''}`
+    const body = [
+      `Καλησπέρα${off.customer_name ? ' ' + off.customer_name : ''},`,
+      '',
+      `Σας στέλνουμε την προσφορά ${off.number}.`,
+      off.issue_date ? `Ημερομηνία: ${off.issue_date}` : '',
+      off.expiry_date ? `Ισχύει έως: ${off.expiry_date}` : '',
+      '',
+      lines ? `Εργασίες / Υλικά:\n${lines}` : '',
+      '',
+      `Σύνολο: ${off.total.toLocaleString('el-GR', { minimumFractionDigits: 2 })}€`,
+      off.notes ? `\nΣημειώσεις: ${off.notes}` : '',
+      '',
+      [companyName, phone].filter(Boolean).join(' | '),
+    ].filter(Boolean).join('\n')
+    const url = `mailto:${email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+    if (isElectron) await ipc.openExternal(url)
+    else window.location.href = url
+  }
+
   const handleCreateJob = async (off: Offer, scheduledDate?: string) => {
     setCreatingJob(off.id)
     try {
@@ -559,6 +593,16 @@ export default function Offers() {
                     <path d="M11.992 2C6.476 2 2 6.476 2 11.992c0 2.172.693 4.18 1.864 5.822L2.5 21.5l3.794-1.328A9.956 9.956 0 0011.992 22c5.516 0 9.992-4.476 9.992-9.992C21.984 6.476 17.508 2 11.992 2zm4.9 13.9c-.21.588-.942 1.176-1.596 1.26-.42.042-.966.084-3.108-.672-2.604-.966-4.284-3.612-4.41-3.78-.126-.168-1.05-1.386-1.05-2.646 0-1.26.672-1.89 1.008-2.142.336-.252.714-.336.966-.336.252 0 .462 0 .672.042.21.042.504-.084.798.588.294.672 1.008 2.31 1.092 2.478.084.168.126.378 0 .588-.126.21-.168.336-.336.504-.168.168-.336.378-.462.504-.168.168-.336.378-.168.714.168.336.756 1.26 1.638 2.058 1.134 1.008 2.1 1.344 2.394 1.47.294.126.462.084.63-.084.168-.168.714-.84.882-1.134.168-.294.378-.252.63-.168.252.084 1.638.798 1.932.966.294.168.504.252.588.378.084.168.084.672-.126 1.26z"/>
                   </svg>
                   Viber
+                </button>
+                <button
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-sky-500/10 text-sky-400 hover:bg-sky-500/20 transition-colors"
+                  onClick={() => handleShareEmail(off)}
+                  title="Αποστολή με email"
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  Email
                 </button>
                 <button
                   className="text-gray-500 hover:text-white p-1.5 rounded-lg hover:bg-surface-700 transition-colors"

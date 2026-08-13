@@ -1,5 +1,16 @@
 // Type-safe wrapper around the contextBridge API exposed in preload.ts
 
+export interface BackupResult {
+  ok: boolean
+  canceled?: boolean
+  filePath?: string
+  restoredFrom?: string
+  safetyBackupPath?: string
+  counts?: Record<string, number>
+  redactedSecrets?: string[]
+  reloadRequired?: boolean
+}
+
 interface ElectronAPI {
   keychain: {
     set:    (key: string, value: string) => Promise<void>
@@ -32,6 +43,11 @@ interface ElectronAPI {
   openExternal: (url: string) => Promise<void>
   getVersion:   () => Promise<string>
   getDataPath:  () => Promise<string>
+  backup: {
+    create: () => Promise<BackupResult>
+    restore: () => Promise<BackupResult>
+    showDataFolder: () => Promise<void>
+  }
   subscriptionCheck: () => Promise<{ status: string; tier: string; vapiMinutesUsed: number; vapiPhoneNumber: string | null }>
   setMinimizeToTray: (value: boolean) => void
   update: {
